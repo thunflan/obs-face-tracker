@@ -72,79 +72,85 @@ GamepadDock::GamepadDock(QWidget *parent)
 	QVBoxLayout *tabScenesLayout = new QVBoxLayout(tabScenes);
 
 	// Grupo RB
-	QGroupBox *grpRb = new QGroupBox(obs_module_text("Camada RB (Segure RB + Botão) -> Cenas 1 a 4 (Program)"), tabScenes);
-	QGridLayout *gridRb = new QGridLayout(grpRb);
-	combo_rb_a = new QComboBox(grpRb);
-	combo_rb_b = new QComboBox(grpRb);
-	combo_rb_x = new QComboBox(grpRb);
-	combo_rb_y = new QComboBox(grpRb);
-
-	gridRb->addWidget(new QLabel("RB + A (Cena 1):", grpRb), 0, 0);
-	gridRb->addWidget(combo_rb_a, 0, 1);
-	gridRb->addWidget(new QLabel("RB + B (Cena 2):", grpRb), 0, 2);
-	gridRb->addWidget(combo_rb_b, 0, 3);
-	gridRb->addWidget(new QLabel("RB + X (Cena 3):", grpRb), 1, 0);
-	gridRb->addWidget(combo_rb_x, 1, 1);
-	gridRb->addWidget(new QLabel("RB + Y (Cena 4):", grpRb), 1, 2);
-	gridRb->addWidget(combo_rb_y, 1, 3);
-	tabScenesLayout->addWidget(grpRb);
-
-	// Grupo RT
-	QGroupBox *grpRt = new QGroupBox(obs_module_text("Camada RT (Segure RT + Botão) -> Cenas 5 a 8 (Program)"), tabScenes);
-	QGridLayout *gridRt = new QGridLayout(grpRt);
-	combo_rt_a = new QComboBox(grpRt);
-	combo_rt_b = new QComboBox(grpRt);
-	combo_rt_x = new QComboBox(grpRt);
-	combo_rt_y = new QComboBox(grpRt);
-
-	gridRt->addWidget(new QLabel("RT + A (Cena 5):", grpRt), 0, 0);
-	gridRt->addWidget(combo_rt_a, 0, 1);
-	gridRt->addWidget(new QLabel("RT + B (Cena 6):", grpRt), 0, 2);
-	gridRt->addWidget(combo_rt_b, 0, 3);
-	gridRt->addWidget(new QLabel("RT + X (Cena 7):", grpRt), 1, 0);
-	gridRt->addWidget(combo_rt_x, 1, 1);
-	gridRt->addWidget(new QLabel("RT + Y (Cena 8):", grpRt), 1, 2);
-	gridRt->addWidget(combo_rt_y, 1, 3);
-	tabScenesLayout->addWidget(grpRt);
-
-	// Grupo D-Pad & Ações da Mesa
-	QGroupBox *grpDpad = new QGroupBox(obs_module_text("Mesa de Corte: Transição, Corte e D-Pad (Preview)"), tabScenes);
+	// 1. Grupo D-Pad Direto (Cenas 1 a 4)
+	QGroupBox *grpDpad = new QGroupBox(obs_module_text("D-Pad Direto (Sem Modificador) -> Cenas 1 a 4 (Program)"), tabScenes);
 	QGridLayout *gridDpad = new QGridLayout(grpDpad);
 	combo_dpad_up = new QComboBox(grpDpad);
 	combo_dpad_down = new QComboBox(grpDpad);
 	combo_dpad_left = new QComboBox(grpDpad);
 	combo_dpad_right = new QComboBox(grpDpad);
 
-	gridDpad->addWidget(new QLabel("D-Pad Cima (Preview):", grpDpad), 0, 0);
+	gridDpad->addWidget(new QLabel("D-Pad Cima (Cena 1):", grpDpad), 0, 0);
 	gridDpad->addWidget(combo_dpad_up, 0, 1);
-	gridDpad->addWidget(new QLabel("D-Pad Baixo (Preview):", grpDpad), 0, 2);
+	gridDpad->addWidget(new QLabel("D-Pad Baixo (Cena 2):", grpDpad), 0, 2);
 	gridDpad->addWidget(combo_dpad_down, 0, 3);
-	gridDpad->addWidget(new QLabel("D-Pad Esquerda (Preview):", grpDpad), 1, 0);
+	gridDpad->addWidget(new QLabel("D-Pad Esquerda (Cena 3):", grpDpad), 1, 0);
 	gridDpad->addWidget(combo_dpad_left, 1, 1);
-	gridDpad->addWidget(new QLabel("D-Pad Direita (Preview):", grpDpad), 1, 2);
+	gridDpad->addWidget(new QLabel("D-Pad Direita (Cena 4):", grpDpad), 1, 2);
 	gridDpad->addWidget(combo_dpad_right, 1, 3);
-
-	QLabel *lblCutInfo = new QLabel(obs_module_text("⚡ <b>LB</b>: Corte Seco (Cut) direto para Program | 🎬 <b>LT</b>: Transição Suave (Preview -> Program)"), grpDpad);
-	lblCutInfo->setStyleSheet("color: #58a6ff; font-size: 11px; padding: 4px;");
-	gridDpad->addWidget(lblCutInfo, 2, 0, 1, 4);
 	tabScenesLayout->addWidget(grpDpad);
+
+	// 2. Grupo RB + D-Pad (Cenas 5 a 8)
+	QGroupBox *grpRbDpad = new QGroupBox(obs_module_text("Camada RB (Segure RB + D-Pad) -> Cenas 5 a 8 (Program)"), tabScenes);
+	QGridLayout *gridRbDpad = new QGridLayout(grpRbDpad);
+	combo_rb_dpad_up = new QComboBox(grpRbDpad);
+	combo_rb_dpad_down = new QComboBox(grpRbDpad);
+	combo_rb_dpad_left = new QComboBox(grpRbDpad);
+	combo_rb_dpad_right = new QComboBox(grpRbDpad);
+
+	gridRbDpad->addWidget(new QLabel("RB + D-Pad Cima (Cena 5):", grpRbDpad), 0, 0);
+	gridRbDpad->addWidget(combo_rb_dpad_up, 0, 1);
+	gridRbDpad->addWidget(new QLabel("RB + D-Pad Baixo (Cena 6):", grpRbDpad), 0, 2);
+	gridRbDpad->addWidget(combo_rb_dpad_down, 0, 3);
+	gridRbDpad->addWidget(new QLabel("RB + D-Pad Esquerda (Cena 7):", grpRbDpad), 1, 0);
+	gridRbDpad->addWidget(combo_rb_dpad_left, 1, 1);
+	gridRbDpad->addWidget(new QLabel("RB + D-Pad Direita (Cena 8):", grpRbDpad), 1, 2);
+	gridRbDpad->addWidget(combo_rb_dpad_right, 1, 3);
+	tabScenesLayout->addWidget(grpRbDpad);
+
+	// 3. Grupo RT + D-Pad (Cenas 9 a 12)
+	QGroupBox *grpRtDpad = new QGroupBox(obs_module_text("Camada RT (Segure RT + D-Pad) -> Cenas 9 a 12 (Program)"), tabScenes);
+	QGridLayout *gridRtDpad = new QGridLayout(grpRtDpad);
+	combo_rt_dpad_up = new QComboBox(grpRtDpad);
+	combo_rt_dpad_down = new QComboBox(grpRtDpad);
+	combo_rt_dpad_left = new QComboBox(grpRtDpad);
+	combo_rt_dpad_right = new QComboBox(grpRtDpad);
+
+	gridRtDpad->addWidget(new QLabel("RT + D-Pad Cima (Cena 9):", grpRtDpad), 0, 0);
+	gridRtDpad->addWidget(combo_rt_dpad_up, 0, 1);
+	gridRtDpad->addWidget(new QLabel("RT + D-Pad Baixo (Cena 10):", grpRtDpad), 0, 2);
+	gridRtDpad->addWidget(combo_rt_dpad_down, 0, 3);
+	gridRtDpad->addWidget(new QLabel("RT + D-Pad Esquerda (Cena 11):", grpRtDpad), 1, 0);
+	gridRtDpad->addWidget(combo_rt_dpad_left, 1, 1);
+	gridRtDpad->addWidget(new QLabel("RT + D-Pad Direita (Cena 12):", grpRtDpad), 1, 2);
+	gridRtDpad->addWidget(combo_rt_dpad_right, 1, 3);
+	tabScenesLayout->addWidget(grpRtDpad);
+
+	// Banner explicativo das funções de Presets e Corte
+	QLabel *lblPresetsInfo = new QLabel(obs_module_text(
+		"🎯 <b>Presets PTZ</b>: Botões <b>A, B, X, Y</b> (Presets 1 a 4) | <b>RB + (A,B,X,Y)</b> (Presets 5 a 8) | <b>RT + (A,B,X,Y)</b> (Presets 9 a 12)<br>"
+		"⚡ <b>Mesa de Corte</b>: <b>LB</b>: Corte Seco (Cut) | 🎬 <b>LT</b>: Transição Suave (Preview -> Program)"), tabScenes);
+	lblPresetsInfo->setStyleSheet("background-color: #161b22; color: #58a6ff; font-size: 11px; padding: 6px; border: 1px solid #30363d; border-radius: 4px;");
+	tabScenesLayout->addWidget(lblPresetsInfo);
 
 	tabScenesLayout->addStretch();
 	tabs->addTab(tabScenes, obs_module_text("Mesa de Corte & Cenas"));
 
 	// Conectar alterações de cenas
-	connect(combo_rb_a, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
-	connect(combo_rb_b, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
-	connect(combo_rb_x, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
-	connect(combo_rb_y, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
-	connect(combo_rt_a, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
-	connect(combo_rt_b, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
-	connect(combo_rt_x, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
-	connect(combo_rt_y, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
 	connect(combo_dpad_up, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
 	connect(combo_dpad_down, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
 	connect(combo_dpad_left, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
 	connect(combo_dpad_right, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
+
+	connect(combo_rb_dpad_up, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
+	connect(combo_rb_dpad_down, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
+	connect(combo_rb_dpad_left, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
+	connect(combo_rb_dpad_right, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
+
+	connect(combo_rt_dpad_up, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
+	connect(combo_rt_dpad_down, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
+	connect(combo_rt_dpad_left, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
+	connect(combo_rt_dpad_right, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
 
 	// ==========================================
 	// ABA 2: Tela de Teste e Calibração ao Vivo
@@ -241,14 +247,17 @@ GamepadDock::GamepadDock(QWidget *parent)
 	guideText->setText(obs_module_text(
 		"<h3>🎮 Guia Rápido de Operação por Gamepad</h3>"
 		"<table border='1' cellpadding='6' cellspacing='0' style='border-collapse: collapse; width: 100%; border-color: #30363d;'>"
-		"<tr style='background-color: #21262d;'><th>Botão / Controle</th><th>Ação Padrão (Sem Modificador)</th><th>Segurando RB</th><th>Segurando RT</th></tr>"
-		"<tr><td><b>Botão A</b></td><td>Chama <b>Preset PTZ 1</b></td><td>Chama <b>Cena 1</b> no Programa</td><td>Chama <b>Cena 5</b> no Programa</td></tr>"
-		"<tr><td><b>Botão B</b></td><td>Chama <b>Preset PTZ 2</b></td><td>Chama <b>Cena 2</b> no Programa</td><td>Chama <b>Cena 6</b> no Programa</td></tr>"
-		"<tr><td><b>Botão X</b></td><td>Chama <b>Preset PTZ 3</b></td><td>Chama <b>Cena 3</b> no Programa</td><td>Chama <b>Cena 7</b> no Programa</td></tr>"
-		"<tr><td><b>Botão Y</b></td><td>Chama <b>Preset PTZ 4</b></td><td>Chama <b>Cena 4</b> no Programa</td><td>Chama <b>Cena 8</b> no Programa</td></tr>"
+		"<tr style='background-color: #21262d;'><th>Botão / Controle</th><th>Ação Direta (Sem Modificador)</th><th>Segurando Bumper RB</th><th>Segurando Gatilho RT</th></tr>"
+		"<tr><td><b>Botão A</b></td><td>Chama <b>Preset PTZ 1</b></td><td>Chama <b>Preset PTZ 5</b></td><td>Chama <b>Preset PTZ 9</b></td></tr>"
+		"<tr><td><b>Botão B</b></td><td>Chama <b>Preset PTZ 2</b></td><td>Chama <b>Preset PTZ 6</b></td><td>Chama <b>Preset PTZ 10</b></td></tr>"
+		"<tr><td><b>Botão X</b></td><td>Chama <b>Preset PTZ 3</b></td><td>Chama <b>Preset PTZ 7</b></td><td>Chama <b>Preset PTZ 11</b></td></tr>"
+		"<tr><td><b>Botão Y</b></td><td>Chama <b>Preset PTZ 4</b></td><td>Chama <b>Preset PTZ 8</b></td><td>Chama <b>Preset PTZ 12</b></td></tr>"
+		"<tr><td><b>D-Pad Cima</b></td><td>Chama <b>Cena 1</b></td><td>Chama <b>Cena 5</b></td><td>Chama <b>Cena 9</b></td></tr>"
+		"<tr><td><b>D-Pad Baixo</b></td><td>Chama <b>Cena 2</b></td><td>Chama <b>Cena 6</b></td><td>Chama <b>Cena 10</b></td></tr>"
+		"<tr><td><b>D-Pad Esquerda</b></td><td>Chama <b>Cena 3</b></td><td>Chama <b>Cena 7</b></td><td>Chama <b>Cena 11</b></td></tr>"
+		"<tr><td><b>D-Pad Direita</b></td><td>Chama <b>Cena 4</b></td><td>Chama <b>Cena 8</b></td><td>Chama <b>Cena 12</b></td></tr>"
 		"<tr><td><b>Bumper LB</b></td><td colspan='3'><b>Corte Seco (Cut)</b> imediato para o Programa</td></tr>"
 		"<tr><td><b>Gatilho LT</b></td><td colspan='3'><b>Transição Suave</b> (Studio Mode: Preview -> Program)</td></tr>"
-		"<tr><td><b>D-Pad (Direcionais)</b></td><td colspan='3'>Envia Cenas Pré-definidas para o <b>Preview</b></td></tr>"
 		"<tr><td><b>Analógico Esquerdo</b></td><td colspan='3'>Move Pan e Tilt suavemente (com rampa física cinematográfica)</td></tr>"
 		"<tr><td><b>R3 ou Start</b></td><td colspan='3'>Alterna entre <b>Controle Manual</b> e <b>Rastreamento Automático Facial</b></td></tr>"
 		"</table>"
@@ -311,18 +320,20 @@ void GamepadDock::populateScenes()
 	};
 
 	GamepadSceneConfig &cfg = GamepadController::get_instance().get_scene_config();
-	updateCombo(combo_rb_a, cfg.scene_rb_a);
-	updateCombo(combo_rb_b, cfg.scene_rb_b);
-	updateCombo(combo_rb_x, cfg.scene_rb_x);
-	updateCombo(combo_rb_y, cfg.scene_rb_y);
-	updateCombo(combo_rt_a, cfg.scene_rt_a);
-	updateCombo(combo_rt_b, cfg.scene_rt_b);
-	updateCombo(combo_rt_x, cfg.scene_rt_x);
-	updateCombo(combo_rt_y, cfg.scene_rt_y);
-	updateCombo(combo_dpad_up, cfg.preview_up);
-	updateCombo(combo_dpad_down, cfg.preview_down);
-	updateCombo(combo_dpad_left, cfg.preview_left);
-	updateCombo(combo_dpad_right, cfg.preview_right);
+	updateCombo(combo_dpad_up, cfg.scene_dpad_up);
+	updateCombo(combo_dpad_down, cfg.scene_dpad_down);
+	updateCombo(combo_dpad_left, cfg.scene_dpad_left);
+	updateCombo(combo_dpad_right, cfg.scene_dpad_right);
+
+	updateCombo(combo_rb_dpad_up, cfg.scene_rb_dpad_up);
+	updateCombo(combo_rb_dpad_down, cfg.scene_rb_dpad_down);
+	updateCombo(combo_rb_dpad_left, cfg.scene_rb_dpad_left);
+	updateCombo(combo_rb_dpad_right, cfg.scene_rb_dpad_right);
+
+	updateCombo(combo_rt_dpad_up, cfg.scene_rt_dpad_up);
+	updateCombo(combo_rt_dpad_down, cfg.scene_rt_dpad_down);
+	updateCombo(combo_rt_dpad_left, cfg.scene_rt_dpad_left);
+	updateCombo(combo_rt_dpad_right, cfg.scene_rt_dpad_right);
 }
 
 void GamepadDock::onRefreshScenesClicked()
@@ -339,24 +350,27 @@ void GamepadDock::onSceneMappingChanged()
 	};
 
 	GamepadSceneConfig &cfg = GamepadController::get_instance().get_scene_config();
-	cfg.scene_rb_a = getScene(combo_rb_a);
-	cfg.scene_rb_b = getScene(combo_rb_b);
-	cfg.scene_rb_x = getScene(combo_rb_x);
-	cfg.scene_rb_y = getScene(combo_rb_y);
-	cfg.scene_rt_a = getScene(combo_rt_a);
-	cfg.scene_rt_b = getScene(combo_rt_b);
-	cfg.scene_rt_x = getScene(combo_rt_x);
-	cfg.scene_rt_y = getScene(combo_rt_y);
-	cfg.preview_up = getScene(combo_dpad_up);
-	cfg.preview_down = getScene(combo_dpad_down);
-	cfg.preview_left = getScene(combo_dpad_left);
-	cfg.preview_right = getScene(combo_dpad_right);
+	cfg.scene_dpad_up = getScene(combo_dpad_up);
+	cfg.scene_dpad_down = getScene(combo_dpad_down);
+	cfg.scene_dpad_left = getScene(combo_dpad_left);
+	cfg.scene_dpad_right = getScene(combo_dpad_right);
+
+	cfg.scene_rb_dpad_up = getScene(combo_rb_dpad_up);
+	cfg.scene_rb_dpad_down = getScene(combo_rb_dpad_down);
+	cfg.scene_rb_dpad_left = getScene(combo_rb_dpad_left);
+	cfg.scene_rb_dpad_right = getScene(combo_rb_dpad_right);
+
+	cfg.scene_rt_dpad_up = getScene(combo_rt_dpad_up);
+	cfg.scene_rt_dpad_down = getScene(combo_rt_dpad_down);
+	cfg.scene_rt_dpad_left = getScene(combo_rt_dpad_left);
+	cfg.scene_rt_dpad_right = getScene(combo_rt_dpad_right);
 }
 
 void GamepadDock::onTimerUpdate()
 {
 	GamepadState state;
-	bool ok = GamepadController::get_instance().poll_state(state);
+	// Chama tick() continuamente para ler o controle e disparar trocas de cenas e presets!
+	bool ok = GamepadController::get_instance().tick(0.033f, state);
 
 	if (ok && state.connected) {
 		statusLabel->setText(obs_module_text("🟢 Controle Conectado (Xbox / PS5)"));
@@ -385,8 +399,8 @@ void GamepadDock::onTimerUpdate()
 	lbl_btn_y->setStyleSheet(badge_style(state.btn_y));
 	lbl_btn_lb->setStyleSheet(badge_style(state.btn_lb));
 	lbl_btn_rb->setStyleSheet(badge_style(state.btn_rb));
-	lbl_btn_lt->setStyleSheet(badge_style(state.trigger_left > 0.4f));
-	lbl_btn_rt->setStyleSheet(badge_style(state.trigger_right > 0.4f));
+	lbl_btn_lt->setStyleSheet(badge_style(state.trigger_left > 0.4f || state.btn_lt));
+	lbl_btn_rt->setStyleSheet(badge_style(state.trigger_right > 0.4f || state.btn_rt));
 
 	bool dpad_any = (state.dpad_up || state.dpad_down || state.dpad_left || state.dpad_right);
 	lbl_dpad->setStyleSheet(badge_style(dpad_any));
@@ -402,52 +416,61 @@ void GamepadDock::onTimerUpdate()
 
 void GamepadDock::default_properties(obs_data_t *props)
 {
-	obs_data_set_default_string(props, "scene_rb_a", "");
-	obs_data_set_default_string(props, "scene_rb_b", "");
-	obs_data_set_default_string(props, "scene_rb_x", "");
-	obs_data_set_default_string(props, "scene_rb_y", "");
-	obs_data_set_default_string(props, "scene_rt_a", "");
-	obs_data_set_default_string(props, "scene_rt_b", "");
-	obs_data_set_default_string(props, "scene_rt_x", "");
-	obs_data_set_default_string(props, "scene_rt_y", "");
-	obs_data_set_default_string(props, "preview_up", "");
-	obs_data_set_default_string(props, "preview_down", "");
-	obs_data_set_default_string(props, "preview_left", "");
-	obs_data_set_default_string(props, "preview_right", "");
+	obs_data_set_default_string(props, "scene_dpad_up", "");
+	obs_data_set_default_string(props, "scene_dpad_down", "");
+	obs_data_set_default_string(props, "scene_dpad_left", "");
+	obs_data_set_default_string(props, "scene_dpad_right", "");
+
+	obs_data_set_default_string(props, "scene_rb_dpad_up", "");
+	obs_data_set_default_string(props, "scene_rb_dpad_down", "");
+	obs_data_set_default_string(props, "scene_rb_dpad_left", "");
+	obs_data_set_default_string(props, "scene_rb_dpad_right", "");
+
+	obs_data_set_default_string(props, "scene_rt_dpad_up", "");
+	obs_data_set_default_string(props, "scene_rt_dpad_down", "");
+	obs_data_set_default_string(props, "scene_rt_dpad_left", "");
+	obs_data_set_default_string(props, "scene_rt_dpad_right", "");
 }
 
 void GamepadDock::save_properties(obs_data_t *props)
 {
 	GamepadSceneConfig &cfg = GamepadController::get_instance().get_scene_config();
-	obs_data_set_string(props, "scene_rb_a", cfg.scene_rb_a.c_str());
-	obs_data_set_string(props, "scene_rb_b", cfg.scene_rb_b.c_str());
-	obs_data_set_string(props, "scene_rb_x", cfg.scene_rb_x.c_str());
-	obs_data_set_string(props, "scene_rb_y", cfg.scene_rb_y.c_str());
-	obs_data_set_string(props, "scene_rt_a", cfg.scene_rt_a.c_str());
-	obs_data_set_string(props, "scene_rt_b", cfg.scene_rt_b.c_str());
-	obs_data_set_string(props, "scene_rt_x", cfg.scene_rt_x.c_str());
-	obs_data_set_string(props, "scene_rt_y", cfg.scene_rt_y.c_str());
-	obs_data_set_string(props, "preview_up", cfg.preview_up.c_str());
-	obs_data_set_string(props, "preview_down", cfg.preview_down.c_str());
-	obs_data_set_string(props, "preview_left", cfg.preview_left.c_str());
-	obs_data_set_string(props, "preview_right", cfg.preview_right.c_str());
+	obs_data_set_string(props, "scene_dpad_up", cfg.scene_dpad_up.c_str());
+	obs_data_set_string(props, "scene_dpad_down", cfg.scene_dpad_down.c_str());
+	obs_data_set_string(props, "scene_dpad_left", cfg.scene_dpad_left.c_str());
+	obs_data_set_string(props, "scene_dpad_right", cfg.scene_dpad_right.c_str());
+
+	obs_data_set_string(props, "scene_rb_dpad_up", cfg.scene_rb_dpad_up.c_str());
+	obs_data_set_string(props, "scene_rb_dpad_down", cfg.scene_rb_dpad_down.c_str());
+	obs_data_set_string(props, "scene_rb_dpad_left", cfg.scene_rb_dpad_left.c_str());
+	obs_data_set_string(props, "scene_rb_dpad_right", cfg.scene_rb_dpad_right.c_str());
+
+	obs_data_set_string(props, "scene_rt_dpad_up", cfg.scene_rt_dpad_up.c_str());
+	obs_data_set_string(props, "scene_rt_dpad_down", cfg.scene_rt_dpad_down.c_str());
+	obs_data_set_string(props, "scene_rt_dpad_left", cfg.scene_rt_dpad_left.c_str());
+	obs_data_set_string(props, "scene_rt_dpad_right", cfg.scene_rt_dpad_right.c_str());
 }
 
 void GamepadDock::load_properties(obs_data_t *props)
 {
 	GamepadSceneConfig &cfg = GamepadController::get_instance().get_scene_config();
-	cfg.scene_rb_a = obs_data_get_string(props, "scene_rb_a");
-	cfg.scene_rb_b = obs_data_get_string(props, "scene_rb_b");
-	cfg.scene_rb_x = obs_data_get_string(props, "scene_rb_x");
-	cfg.scene_rb_y = obs_data_get_string(props, "scene_rb_y");
-	cfg.scene_rt_a = obs_data_get_string(props, "scene_rt_a");
-	cfg.scene_rt_b = obs_data_get_string(props, "scene_rt_b");
-	cfg.scene_rt_x = obs_data_get_string(props, "scene_rt_x");
-	cfg.scene_rt_y = obs_data_get_string(props, "scene_rt_y");
-	cfg.preview_up = obs_data_get_string(props, "preview_up");
-	cfg.preview_down = obs_data_get_string(props, "preview_down");
-	cfg.preview_left = obs_data_get_string(props, "preview_left");
-	cfg.preview_right = obs_data_get_string(props, "preview_right");
+	cfg.scene_dpad_up = obs_data_get_string(props, "scene_dpad_up");
+	cfg.scene_dpad_down = obs_data_get_string(props, "scene_dpad_down");
+	cfg.scene_dpad_left = obs_data_get_string(props, "scene_dpad_left");
+	cfg.scene_dpad_right = obs_data_get_string(props, "scene_dpad_right");
+
+	cfg.scene_rb_dpad_up = obs_data_get_string(props, "scene_rb_dpad_up");
+	cfg.scene_rb_dpad_down = obs_data_get_string(props, "scene_rb_dpad_down");
+	cfg.scene_rb_dpad_left = obs_data_get_string(props, "scene_rb_dpad_left");
+	cfg.scene_rb_dpad_right = obs_data_get_string(props, "scene_rb_dpad_right");
+
+	cfg.scene_rt_dpad_up = obs_data_get_string(props, "scene_rt_dpad_up");
+	cfg.scene_rt_dpad_down = obs_data_get_string(props, "scene_rt_dpad_down");
+	cfg.scene_rt_dpad_left = obs_data_get_string(props, "scene_rt_dpad_left");
+	cfg.scene_rt_dpad_right = obs_data_get_string(props, "scene_rt_dpad_right");
+
+	populateScenes();
+}
 
 	populateScenes();
 }

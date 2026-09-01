@@ -258,6 +258,20 @@ bool GamepadController::poll_state(GamepadState &state)
 #endif
 }
 
+static void recall_ptz_preset(int camera_idx, int preset_num)
+{
+	blog(LOG_INFO, "[Gamepad PTZ] Recalling preset %d on camera %d", preset_num, camera_idx);
+	proc_handler_t *ph = obs_get_proc_handler();
+	if (ph) {
+		calldata_t cd;
+		calldata_init(&cd);
+		calldata_set_int(&cd, "camera_index", camera_idx);
+		calldata_set_int(&cd, "preset", preset_num);
+		proc_handler_call(ph, "ptz_preset_recall", &cd);
+		calldata_free(&cd);
+	}
+}
+
 bool GamepadController::tick(float dt, GamepadState &state)
 {
 	if (!enabled)
@@ -292,39 +306,93 @@ bool GamepadController::tick(float dt, GamepadState &state)
 	}
 
 	bool is_rb_held = state.btn_rb;
-	bool is_rt_held = (curr_rt > 0.4f);
+	bool is_rt_held = (curr_rt > 0.4f || state.btn_rt);
 
-	if (is_rb_held) {
-		if (pressed_buttons & XINPUT_GAMEPAD_A)
-			switch_scene_by_name(scene_config.scene_rb_a, false);
-		if (pressed_buttons & XINPUT_GAMEPAD_B)
-			switch_scene_by_name(scene_config.scene_rb_b, false);
-		if (pressed_buttons & XINPUT_GAMEPAD_X)
-			switch_scene_by_name(scene_config.scene_rb_x, false);
-		if (pressed_buttons & XINPUT_GAMEPAD_Y)
-			switch_scene_by_name(scene_config.scene_rb_y, false);
-	} else if (is_rt_held) {
-		if (pressed_buttons & XINPUT_GAMEPAD_A)
-			switch_scene_by_name(scene_config.scene_rt_a, false);
-		if (pressed_buttons & XINPUT_GAMEPAD_B)
-			switch_scene_by_name(scene_config.scene_rt_b, false);
-		if (pressed_buttons & XINPUT_GAMEPAD_X)
-			switch_scene_by_name(scene_config.scene_rt_x, false);
-		if (pressed_buttons & XINPUT_GAMEPAD_Y)
-			switch_scene_by_name(scene_config.scene_rt_y, false);
+	// 1. PRESETS PTZ NOS BOTÕES A, B, X, Y (1 a 12)
+	if (is_rt_held) {
+		if (pressed_buttons & XINPUT_GAMEPAD_A) {
+			recall_ptz_preset(active_camera, 9);
+			if (on_preset) on_preset(active_camera, 9);
+		}
+		if (pressed_buttons & XINPUT_GAMEPAD_B) {
+			recall_ptz_preset(active_camera, 10);
+			if (on_preset) on_preset(active_camera, 10);
+		}
+		if (pressed_buttons & XINPUT_GAMEPAD_X) {
+			recall_ptz_preset(active_camera, 11);
+			if (on_preset) on_preset(active_camera, 11);
+		}
+		if (pressed_buttons & XINPUT_GAMEPAD_Y) {
+			recall_ptz_preset(active_camera, 12);
+			if (on_preset) on_preset(active_camera, 12);
+		}
+	} else if (is_rb_held) {
+		if (pressed_buttons & XINPUT_GAMEPAD_A) {
+			recall_ptz_preset(active_camera, 5);
+			if (on_preset) on_preset(active_camera, 5);
+		}
+		if (pressed_buttons & XINPUT_GAMEPAD_B) {
+			recall_ptz_preset(active_camera, 6);
+			if (on_preset) on_preset(active_camera, 6);
+		}
+		if (pressed_buttons & XINPUT_GAMEPAD_X) {
+			recall_ptz_preset(active_camera, 7);
+			if (on_preset) on_preset(active_camera, 7);
+		}
+		if (pressed_buttons & XINPUT_GAMEPAD_Y) {
+			recall_ptz_preset(active_camera, 8);
+			if (on_preset) on_preset(active_camera, 8);
+		}
 	} else {
-		if (on_preset) {
-			if (pressed_buttons & XINPUT_GAMEPAD_A)
-				on_preset(active_camera, 1);
-			if (pressed_buttons & XINPUT_GAMEPAD_B)
-				on_preset(active_camera, 2);
-			if (pressed_buttons & XINPUT_GAMEPAD_X)
-				on_preset(active_camera, 3);
-			if (pressed_buttons & XINPUT_GAMEPAD_Y)
-				on_preset(active_camera, 4);
+		if (pressed_buttons & XINPUT_GAMEPAD_A) {
+			recall_ptz_preset(active_camera, 1);
+			if (on_preset) on_preset(active_camera, 1);
+		}
+		if (pressed_buttons & XINPUT_GAMEPAD_B) {
+			recall_ptz_preset(active_camera, 2);
+			if (on_preset) on_preset(active_camera, 2);
+		}
+		if (pressed_buttons & XINPUT_GAMEPAD_X) {
+			recall_ptz_preset(active_camera, 3);
+			if (on_preset) on_preset(active_camera, 3);
+		}
+		if (pressed_buttons & XINPUT_GAMEPAD_Y) {
+			recall_ptz_preset(active_camera, 4);
+			if (on_preset) on_preset(active_camera, 4);
 		}
 	}
 
+	// 2. TROCA DE CENAS NO D-PAD
+	if (is_rt_held) {
+		if (pressed_buttons & XINPUT_GAMEPAD_DPAD_UP)
+			switch_scene_by_name(scene_config.scene_rt_dpad_up, false);
+		if (pressed_buttons & XINPUT_GAMEPAD_DPAD_DOWN)
+			switch_scene_by_name(scene_config.scene_rt_dpad_down, false);
+		if (pressed_buttons & XINPUT_GAMEPAD_DPAD_LEFT)
+			switch_scene_by_name(scene_config.scene_rt_dpad_left, false);
+		if (pressed_buttons & XINPUT_GAMEPAD_DPAD_RIGHT)
+			switch_scene_by_name(scene_config.scene_rt_dpad_right, false);
+	} else if (is_rb_held) {
+		if (pressed_buttons & XINPUT_GAMEPAD_DPAD_UP)
+			switch_scene_by_name(scene_config.scene_rb_dpad_up, false);
+		if (pressed_buttons & XINPUT_GAMEPAD_DPAD_DOWN)
+			switch_scene_by_name(scene_config.scene_rb_dpad_down, false);
+		if (pressed_buttons & XINPUT_GAMEPAD_DPAD_LEFT)
+			switch_scene_by_name(scene_config.scene_rb_dpad_left, false);
+		if (pressed_buttons & XINPUT_GAMEPAD_DPAD_RIGHT)
+			switch_scene_by_name(scene_config.scene_rb_dpad_right, false);
+	} else {
+		if (pressed_buttons & XINPUT_GAMEPAD_DPAD_UP)
+			switch_scene_by_name(scene_config.scene_dpad_up, false);
+		if (pressed_buttons & XINPUT_GAMEPAD_DPAD_DOWN)
+			switch_scene_by_name(scene_config.scene_dpad_down, false);
+		if (pressed_buttons & XINPUT_GAMEPAD_DPAD_LEFT)
+			switch_scene_by_name(scene_config.scene_dpad_left, false);
+		if (pressed_buttons & XINPUT_GAMEPAD_DPAD_RIGHT)
+			switch_scene_by_name(scene_config.scene_dpad_right, false);
+	}
+
+	// 3. MESA DE CORTE (LB = Corte Seco, LT = Transição Suave)
 	if (scene_config.cut_on_lb && (pressed_buttons & XINPUT_GAMEPAD_LEFT_SHOULDER)) {
 		if (obs_frontend_get_main_window()) {
 			obs_source_t *preview_scene = obs_frontend_get_current_preview_scene();
@@ -340,15 +408,6 @@ bool GamepadController::tick(float dt, GamepadState &state)
 			obs_frontend_preview_program_trigger_transition();
 		}
 	}
-
-	if (pressed_buttons & XINPUT_GAMEPAD_DPAD_UP)
-		switch_scene_by_name(scene_config.preview_up, true);
-	if (pressed_buttons & XINPUT_GAMEPAD_DPAD_DOWN)
-		switch_scene_by_name(scene_config.preview_down, true);
-	if (pressed_buttons & XINPUT_GAMEPAD_DPAD_LEFT)
-		switch_scene_by_name(scene_config.preview_left, true);
-	if (pressed_buttons & XINPUT_GAMEPAD_DPAD_RIGHT)
-		switch_scene_by_name(scene_config.preview_right, true);
 
 	state.manual_active = is_manual_override;
 	state.active_camera_index = active_camera;

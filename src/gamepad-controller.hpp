@@ -32,20 +32,23 @@ struct GamepadState {
 };
 
 struct GamepadSceneConfig {
-	std::string scene_rb_a; // Cena 1 (RB + A)
-	std::string scene_rb_b; // Cena 2 (RB + B)
-	std::string scene_rb_x; // Cena 3 (RB + X)
-	std::string scene_rb_y; // Cena 4 (RB + Y)
-	std::string scene_rt_a; // Cena 5 (RT + A)
-	std::string scene_rt_b; // Cena 6 (RT + B)
-	std::string scene_rt_x; // Cena 7 (RT + X)
-	std::string scene_rt_y; // Cena 8 (RT + Y)
-	std::string preview_up;    // D-Pad Cima (Preview)
-	std::string preview_down;  // D-Pad Baixo (Preview)
-	std::string preview_left;  // D-Pad Esquerda (Preview)
-	std::string preview_right; // D-Pad Direita (Preview)
-	bool cut_on_lb;            // Corte Seco no LB
-	bool trans_on_lt;          // Transição no LT
+	std::string scene_dpad_up;    // Cena 1 (D-Pad Cima)
+	std::string scene_dpad_down;  // Cena 2 (D-Pad Baixo)
+	std::string scene_dpad_left;  // Cena 3 (D-Pad Esquerda)
+	std::string scene_dpad_right; // Cena 4 (D-Pad Direita)
+
+	std::string scene_rb_dpad_up;    // Cena 5 (RB + D-Pad Cima)
+	std::string scene_rb_dpad_down;  // Cena 6 (RB + D-Pad Baixo)
+	std::string scene_rb_dpad_left;  // Cena 7 (RB + D-Pad Esquerda)
+	std::string scene_rb_dpad_right; // Cena 8 (RB + D-Pad Direita)
+
+	std::string scene_rt_dpad_up;    // Cena 9 (RT + D-Pad Cima)
+	std::string scene_rt_dpad_down;  // Cena 10 (RT + D-Pad Baixo)
+	std::string scene_rt_dpad_left;  // Cena 11 (RT + D-Pad Esquerda)
+	std::string scene_rt_dpad_right; // Cena 12 (RT + D-Pad Direita)
+
+	bool cut_on_lb;   // Corte Seco no LB
+	bool trans_on_lt; // Transição Suave no LT
 };
 
 class GamepadController {

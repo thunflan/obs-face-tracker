@@ -38,19 +38,21 @@ private:
 	QPushButton *bluetoothBtn;
 	QPushButton *refreshScenesBtn;
 
-	// Mapeamentos de Cenas - Aba 1
-	QComboBox *combo_rb_a;
-	QComboBox *combo_rb_b;
-	QComboBox *combo_rb_x;
-	QComboBox *combo_rb_y;
-	QComboBox *combo_rt_a;
-	QComboBox *combo_rt_b;
-	QComboBox *combo_rt_x;
-	QComboBox *combo_rt_y;
+	// Mapeamentos de Cenas pelo D-Pad - Aba 1
 	QComboBox *combo_dpad_up;
 	QComboBox *combo_dpad_down;
 	QComboBox *combo_dpad_left;
 	QComboBox *combo_dpad_right;
+
+	QComboBox *combo_rb_dpad_up;
+	QComboBox *combo_rb_dpad_down;
+	QComboBox *combo_rb_dpad_left;
+	QComboBox *combo_rb_dpad_right;
+
+	QComboBox *combo_rt_dpad_up;
+	QComboBox *combo_rt_dpad_down;
+	QComboBox *combo_rt_dpad_left;
+	QComboBox *combo_rt_dpad_right;
 
 	// Telemetria ao vivo - Aba 2
 	QLabel *stickLeftLabel;
