@@ -178,6 +178,90 @@ static void make_device(struct face_tracker_ptz *s, const char *ptz_type, obs_da
 	s->ftm->dev = b->make_device(data);
 }
 
+enum ptz_response_profile_e {
+	ptz_profile_smooth = 0,
+	ptz_profile_balanced = 1,
+	ptz_profile_fast = 2,
+	ptz_profile_custom = 3,
+};
+
+static bool response_profile_ptz_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
+{
+	int profile = (int)obs_data_get_int(settings, "response_profile");
+	bool is_custom = (profile == ptz_profile_custom);
+
+	obs_property_set_visible(obs_properties_get(props, "Kp_x_db"), is_custom);
+	obs_property_set_visible(obs_properties_get(props, "Kp_y_db"), is_custom);
+	obs_property_set_visible(obs_properties_get(props, "Kp_z_db"), is_custom);
+	obs_property_set_visible(obs_properties_get(props, "Ki_x"), is_custom);
+	obs_property_set_visible(obs_properties_get(props, "Ki_y"), is_custom);
+	obs_property_set_visible(obs_properties_get(props, "Ki_z"), is_custom);
+	obs_property_set_visible(obs_properties_get(props, "Td_x"), is_custom);
+	obs_property_set_visible(obs_properties_get(props, "Td_y"), is_custom);
+	obs_property_set_visible(obs_properties_get(props, "Td_z"), is_custom);
+	obs_property_set_visible(obs_properties_get(props, "Tdlpf"), is_custom);
+	obs_property_set_visible(obs_properties_get(props, "Tdlpf_z"), is_custom);
+	obs_property_set_visible(obs_properties_get(props, "e_deadband_x"), is_custom);
+	obs_property_set_visible(obs_properties_get(props, "e_deadband_y"), is_custom);
+	obs_property_set_visible(obs_properties_get(props, "e_deadband_z"), is_custom);
+	obs_property_set_visible(obs_properties_get(props, "e_nonlinear_x"), is_custom);
+	obs_property_set_visible(obs_properties_get(props, "e_nonlinear_y"), is_custom);
+	obs_property_set_visible(obs_properties_get(props, "e_nonlinear_z"), is_custom);
+	obs_property_set_visible(obs_properties_get(props, "Tatt_int"), is_custom);
+
+	if (profile == ptz_profile_smooth) {
+		obs_data_set_double(settings, "ptz_smoothness", 0.5);
+		obs_data_set_double(settings, "Kp_x_db", 38.0);
+		obs_data_set_double(settings, "Kp_y_db", 38.0);
+		obs_data_set_double(settings, "Kp_z_db", 28.0);
+		obs_data_set_double(settings, "Ki_x", 0.1);
+		obs_data_set_double(settings, "Ki_y", 0.1);
+		obs_data_set_double(settings, "Ki_z", 0.05);
+		obs_data_set_double(settings, "Td_x", 0.6);
+		obs_data_set_double(settings, "Td_y", 0.6);
+		obs_data_set_double(settings, "Td_z", 0.2);
+		obs_data_set_double(settings, "Tdlpf", 3.0);
+		obs_data_set_double(settings, "Tdlpf_z", 8.0);
+		obs_data_set_double(settings, "e_deadband_x", 3.5);
+		obs_data_set_double(settings, "e_deadband_y", 3.5);
+		obs_data_set_double(settings, "e_deadband_z", 4.0);
+	} else if (profile == ptz_profile_balanced) {
+		obs_data_set_double(settings, "ptz_smoothness", 1.0);
+		obs_data_set_double(settings, "Kp_x_db", 50.0);
+		obs_data_set_double(settings, "Kp_y_db", 50.0);
+		obs_data_set_double(settings, "Kp_z_db", 40.0);
+		obs_data_set_double(settings, "Ki_x", 0.3);
+		obs_data_set_double(settings, "Ki_y", 0.3);
+		obs_data_set_double(settings, "Ki_z", 0.1);
+		obs_data_set_double(settings, "Td_x", 0.42);
+		obs_data_set_double(settings, "Td_y", 0.42);
+		obs_data_set_double(settings, "Td_z", 0.14);
+		obs_data_set_double(settings, "Tdlpf", 2.0);
+		obs_data_set_double(settings, "Tdlpf_z", 6.0);
+		obs_data_set_double(settings, "e_deadband_x", 1.8);
+		obs_data_set_double(settings, "e_deadband_y", 1.8);
+		obs_data_set_double(settings, "e_deadband_z", 2.5);
+	} else if (profile == ptz_profile_fast) {
+		obs_data_set_double(settings, "ptz_smoothness", 1.8);
+		obs_data_set_double(settings, "Kp_x_db", 62.0);
+		obs_data_set_double(settings, "Kp_y_db", 62.0);
+		obs_data_set_double(settings, "Kp_z_db", 48.0);
+		obs_data_set_double(settings, "Ki_x", 0.5);
+		obs_data_set_double(settings, "Ki_y", 0.5);
+		obs_data_set_double(settings, "Ki_z", 0.2);
+		obs_data_set_double(settings, "Td_x", 0.25);
+		obs_data_set_double(settings, "Td_y", 0.25);
+		obs_data_set_double(settings, "Td_z", 0.1);
+		obs_data_set_double(settings, "Tdlpf", 1.0);
+		obs_data_set_double(settings, "Tdlpf_z", 3.0);
+		obs_data_set_double(settings, "e_deadband_x", 1.0);
+		obs_data_set_double(settings, "e_deadband_y", 1.0);
+		obs_data_set_double(settings, "e_deadband_z", 1.5);
+	}
+
+	return true;
+}
+
 static void ftptz_update(void *data, obs_data_t *settings)
 {
 	auto *s = (struct face_tracker_ptz *)data;
@@ -187,6 +271,15 @@ static void ftptz_update(void *data, obs_data_t *settings)
 	s->track_z = obs_data_get_double(settings, "track_z");
 	s->track_x = obs_data_get_double(settings, "track_x");
 	s->track_y = obs_data_get_double(settings, "track_y");
+
+	s->ptz_smoothness = (float)obs_data_get_double(settings, "ptz_smoothness");
+	if (s->ptz_smoothness <= 0.05f)
+		s->ptz_smoothness = 1.0f;
+	s->ramp.set_smoothness(s->ptz_smoothness);
+
+	s->gamepad.set_enabled(obs_data_get_bool(settings, "gamepad_enabled"));
+	s->gamepad.set_deadzone((float)obs_data_get_double(settings, "gamepad_deadzone") * 0.01f);
+	s->gamepad.set_sensitivity((float)obs_data_get_double(settings, "gamepad_sensitivity"));
 
 	s->ki.v[0] = (float)obs_data_get_double(settings, "Ki_x");
 	s->ki.v[1] = (float)obs_data_get_double(settings, "Ki_y");
@@ -271,13 +364,22 @@ static void emit_state_changed(struct face_tracker_ptz *);
 
 static void *ftptz_create(obs_data_t *settings, obs_source_t *context)
 {
-	auto *s = (struct face_tracker_ptz *)bzalloc(sizeof(struct face_tracker_ptz));
+	auto *s = new struct face_tracker_ptz();
 	s->ftm = new ft_manager_for_ftptz(s);
 	s->ftm->crop_cur.x1 = s->ftm->crop_cur.y1 = -2;
 	s->context = context;
 	s->ftm->scale = 2.0f;
 	s->hotkey_pause = OBS_INVALID_HOTKEY_PAIR_ID;
 	s->hotkey_reset = OBS_INVALID_HOTKEY_ID;
+	s->last_ptz_cmd_sent_ns = 0;
+	s->last_sent_u[0] = s->last_sent_u[1] = s->last_sent_u[2] = 0;
+
+	s->gamepad.set_preset_callback([s](int cam_id, int preset_num) {
+		UNUSED_PARAMETER(cam_id);
+		if (s->ftm && s->ftm->dev) {
+			s->ftm->dev->recall_preset(preset_num);
+		}
+	});
 
 	obs_source_update(context, settings);
 
@@ -316,7 +418,7 @@ static void ftptz_destroy(void *data)
 	video_scaler_destroy(s->scaler);
 	bfree(s->scaler_buffer);
 
-	bfree(s);
+	delete s;
 }
 
 static bool ftptz_reset_tracking(obs_properties_t *, obs_property_t *, void *data)
@@ -414,74 +516,115 @@ static obs_properties_t *ftptz_properties(void *data)
 	{
 		obs_properties_t *pp = obs_properties_create();
 		obs_property_t *p;
-		p = obs_properties_add_float(pp, "Kp_x_db", "Track Kp (X)", -40.0, +80.0, 1.0);
+
+		p = obs_properties_add_list(pp, "response_profile", obs_module_text("ResponseProfile"),
+					    OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+		obs_property_list_add_int(p, obs_module_text("Profile.Smooth"), ptz_profile_smooth);
+		obs_property_list_add_int(p, obs_module_text("Profile.Balanced"), ptz_profile_balanced);
+		obs_property_list_add_int(p, obs_module_text("Profile.Fast"), ptz_profile_fast);
+		obs_property_list_add_int(p, obs_module_text("Profile.Custom"), ptz_profile_custom);
+		obs_property_set_long_description(p, obs_module_text("ResponseProfile.Desc"));
+		obs_property_set_modified_callback(p, response_profile_ptz_modified);
+
+		p = obs_properties_add_float(pp, "ptz_smoothness", obs_module_text("PtzSmoothness"), 0.1, 3.0, 0.1);
+		obs_property_set_long_description(p, obs_module_text("PtzSmoothness.Desc"));
+
+		p = obs_properties_add_float(pp, "Kp_x_db", obs_module_text("TrackKpX"), -40.0, +80.0, 1.0);
 		obs_property_float_set_suffix(p, " dB");
 		obs_property_set_long_description(p, obs_module_text("TrackKp.Desc"));
-		p = obs_properties_add_float(pp, "Kp_y_db", "Track Kp (Y)", -40.0, +80.0, 1.0);
+		p = obs_properties_add_float(pp, "Kp_y_db", obs_module_text("TrackKpY"), -40.0, +80.0, 1.0);
 		obs_property_float_set_suffix(p, " dB");
 		obs_property_set_long_description(p, obs_module_text("TrackKp.Desc"));
-		p = obs_properties_add_float(pp, "Kp_z_db", "Track Kp (Z)", -40.0, +60.0, 1.0);
+		p = obs_properties_add_float(pp, "Kp_z_db", obs_module_text("TrackKpZ"), -40.0, +60.0, 1.0);
 		obs_property_float_set_suffix(p, " dB");
 		obs_property_set_long_description(p, obs_module_text("TrackKp.Desc"));
-		p = obs_properties_add_float(pp, "Ki_x", "Track Ki (X)", 0.0, 5.0, 0.01);
+		p = obs_properties_add_float(pp, "Ki_x", obs_module_text("TrackKiX"), 0.0, 5.0, 0.01);
 		obs_property_set_long_description(p, obs_module_text("TrackKi.Desc"));
-		p = obs_properties_add_float(pp, "Ki_y", "Track Ki (Y)", 0.0, 5.0, 0.01);
+		p = obs_properties_add_float(pp, "Ki_y", obs_module_text("TrackKiY"), 0.0, 5.0, 0.01);
 		obs_property_set_long_description(p, obs_module_text("TrackKi.Desc"));
-		p = obs_properties_add_float(pp, "Ki_z", "Track Ki (Z)", 0.0, 5.0, 0.01);
+		p = obs_properties_add_float(pp, "Ki_z", obs_module_text("TrackKiZ"), 0.0, 5.0, 0.01);
 		obs_property_set_long_description(p, obs_module_text("TrackKi.Desc"));
-		p = obs_properties_add_float(pp, "Td_x", "Track Td (X)", 0.0, 5.0, 0.01);
+		p = obs_properties_add_float(pp, "Td_x", obs_module_text("TrackTdX"), 0.0, 5.0, 0.01);
 		obs_property_set_long_description(p, obs_module_text("TrackTd.Desc"));
-		p = obs_properties_add_float(pp, "Td_y", "Track Td (Y)", 0.0, 5.0, 0.01);
+		p = obs_properties_add_float(pp, "Td_y", obs_module_text("TrackTdY"), 0.0, 5.0, 0.01);
 		obs_property_set_long_description(p, obs_module_text("TrackTd.Desc"));
-		p = obs_properties_add_float(pp, "Td_z", "Track Td (Z)", 0.0, 5.0, 0.01);
+		p = obs_properties_add_float(pp, "Td_z", obs_module_text("TrackTdZ"), 0.0, 5.0, 0.01);
 		obs_property_set_long_description(p, obs_module_text("TrackTd.Desc"));
-		p = obs_properties_add_float(pp, "Tdlpf", "Track LPF for Td (X, Y)", 0.0, 10.0, 0.1);
+		p = obs_properties_add_float(pp, "Tdlpf", obs_module_text("TrackLPFXY"), 0.0, 10.0, 0.1);
 		obs_property_set_long_description(p, obs_module_text("TrackLPF.Desc"));
-		p = obs_properties_add_float(pp, "Tdlpf_z", "Track LPF for Td (Z)", 0.0, 10.0, 0.1);
+		p = obs_properties_add_float(pp, "Tdlpf_z", obs_module_text("TrackLPFZ"), 0.0, 10.0, 0.1);
 		obs_property_set_long_description(p, obs_module_text("TrackLPFZ.Desc"));
-		p = obs_properties_add_float(pp, "e_deadband_x", "Dead band (X)", 0.0, 50, 0.1);
+		p = obs_properties_add_float(pp, "e_deadband_x", obs_module_text("DeadbandX"), 0.0, 50, 0.1);
 		obs_property_set_long_description(p, obs_module_text("Deadband.Desc"));
-		p = obs_properties_add_float(pp, "e_deadband_y", "Dead band (Y)", 0.0, 50, 0.1);
+		p = obs_properties_add_float(pp, "e_deadband_y", obs_module_text("DeadbandY"), 0.0, 50, 0.1);
 		obs_property_set_long_description(p, obs_module_text("Deadband.Desc"));
-		p = obs_properties_add_float(pp, "e_deadband_z", "Dead band (Z)", 0.0, 50, 0.1);
+		p = obs_properties_add_float(pp, "e_deadband_z", obs_module_text("DeadbandZ"), 0.0, 50, 0.1);
 		obs_property_set_long_description(p, obs_module_text("Deadband.Desc"));
-		p = obs_properties_add_float(pp, "e_nonlinear_x", "Nonlinear band (X)", 0.0, 50, 0.1);
+		p = obs_properties_add_float(pp, "e_nonlinear_x", obs_module_text("NonlinearBandX"), 0.0, 50, 0.1);
 		obs_property_set_long_description(p, obs_module_text("NonlinearBand.Desc"));
-		p = obs_properties_add_float(pp, "e_nonlinear_y", "Nonlinear band (Y)", 0.0, 50, 0.1);
+		p = obs_properties_add_float(pp, "e_nonlinear_y", obs_module_text("NonlinearBandY"), 0.0, 50, 0.1);
 		obs_property_set_long_description(p, obs_module_text("NonlinearBand.Desc"));
-		p = obs_properties_add_float(pp, "e_nonlinear_z", "Nonlinear band (Z)", 0.0, 50, 0.1);
+		p = obs_properties_add_float(pp, "e_nonlinear_z", obs_module_text("NonlinearBandZ"), 0.0, 50, 0.1);
 		obs_property_set_long_description(p, obs_module_text("NonlinearBand.Desc"));
-		p = obs_properties_add_float(pp, "Tatt_int", "Attenuation time for lost face", 0.0, 4.0, 0.5);
+		p = obs_properties_add_float(pp, "Tatt_int", obs_module_text("AttenuationTime"), 0.0, 4.0, 0.5);
+		obs_property_set_long_description(p, obs_module_text("AttenuationTime.Desc"));
+
 		obs_properties_add_group(props, "ctrl", obs_module_text("TrackingResponse"), OBS_GROUP_NORMAL, pp);
 	}
 
 	{
 		obs_properties_t *pp = obs_properties_create();
 		obs_property_t *p;
-		p = obs_properties_add_float(pp, "face_lost_preset_timeout", "Timeout until recalling memory", 0.1,
-					     60.0, 0.1);
-		obs_property_float_set_suffix(p, " s");
-		obs_properties_add_int(pp, "face_lost_ptz_preset", "Recall memory (-1 for disable)", -1, 15, 1);
-		obs_properties_add_group(props, "facelost", obs_module_text("Face lost behavior"), OBS_GROUP_NORMAL,
-					 pp);
-		p = obs_properties_add_float(pp, "face_lost_zoomout_timeout", "Timeout until zoom-out", 0.0, 60.0, 0.1);
-		obs_property_float_set_suffix(p, " s");
+		p = obs_properties_add_bool(pp, "gamepad_enabled", obs_module_text("Gamepad.Enabled"));
+		obs_property_set_long_description(p, obs_module_text("Gamepad.Enabled.Desc"));
+
+		p = obs_properties_add_float(pp, "gamepad_deadzone", obs_module_text("Gamepad.Deadzone"), 5.0, 40.0, 1.0);
+		obs_property_float_set_suffix(p, " %");
+		obs_property_set_long_description(p, obs_module_text("Gamepad.Deadzone.Desc"));
+
+		p = obs_properties_add_float(pp, "gamepad_sensitivity", obs_module_text("Gamepad.Sensitivity"), 0.2, 3.0, 0.1);
+		obs_property_set_long_description(p, obs_module_text("Gamepad.Sensitivity.Desc"));
+
+		obs_properties_add_group(props, "gamepad_grp", obs_module_text("Gamepad.Group"), OBS_GROUP_NORMAL, pp);
 	}
 
 	{
 		obs_properties_t *pp = obs_properties_create();
-		obs_property_t *p = obs_properties_add_list(pp, "ptz-type", obs_module_text("PTZ Type"),
+		obs_property_t *p;
+		p = obs_properties_add_float(pp, "face_lost_preset_timeout", obs_module_text("FaceLost.TimeoutPreset"), 0.1,
+					     60.0, 0.1);
+		obs_property_float_set_suffix(p, " s");
+		obs_property_set_long_description(p, obs_module_text("FaceLost.TimeoutPreset.Desc"));
+
+		p = obs_properties_add_int(pp, "face_lost_ptz_preset", obs_module_text("FaceLost.PresetIndex"), -1, 15, 1);
+		obs_property_set_long_description(p, obs_module_text("FaceLost.PresetIndex.Desc"));
+
+		p = obs_properties_add_float(pp, "face_lost_zoomout_timeout", obs_module_text("FaceLost.TimeoutZoomout"), 0.0, 60.0, 0.1);
+		obs_property_float_set_suffix(p, " s");
+		obs_property_set_long_description(p, obs_module_text("FaceLost.TimeoutZoomout.Desc"));
+
+		obs_properties_add_group(props, "facelost", obs_module_text("FaceLost.Group"), OBS_GROUP_NORMAL,
+					 pp);
+	}
+
+	{
+		obs_properties_t *pp = obs_properties_create();
+		obs_property_t *p = obs_properties_add_list(pp, "ptz-type", obs_module_text("PTZ.Type"),
 							    OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-		obs_property_list_add_string(p, obs_module_text("None"), "dummy");
-		obs_property_list_add_string(p, obs_module_text("through PTZ Controls"), "obsptz");
+		obs_property_set_long_description(p, obs_module_text("PTZ.Type.Desc"));
+		obs_property_list_add_string(p, obs_module_text("PTZ.Type.None"), "dummy");
+		obs_property_list_add_string(p, obs_module_text("PTZ.Type.Obsptz"), "obsptz");
 #ifdef WITH_PTZ_TCP
-		obs_property_list_add_string(p, obs_module_text("VISCA over TCP"), "visca-over-tcp");
+		obs_property_list_add_string(p, obs_module_text("PTZ.Type.ViscaTCP"), "visca-over-tcp");
 #endif // WITH_PTZ_TCP
 		obs_property_set_modified_callback(p, ptz_type_modified);
 
-		obs_properties_add_bool(pp, "invert_x", obs_module_text("Invert control (Pan)"));
-		obs_properties_add_bool(pp, "invert_y", obs_module_text("Invert control (Tilt)"));
-		obs_properties_add_bool(pp, "invert_z", obs_module_text("Invert control (Zoom)"));
+		p = obs_properties_add_bool(pp, "invert_x", obs_module_text("PTZ.InvertPan"));
+		obs_property_set_long_description(p, obs_module_text("PTZ.InvertPan.Desc"));
+		p = obs_properties_add_bool(pp, "invert_y", obs_module_text("PTZ.InvertTilt"));
+		obs_property_set_long_description(p, obs_module_text("PTZ.InvertTilt.Desc"));
+		p = obs_properties_add_bool(pp, "invert_z", obs_module_text("PTZ.InvertZoom"));
+		obs_property_set_long_description(p, obs_module_text("PTZ.InvertZoom.Desc"));
 		obs_properties_add_group(props, "output", obs_module_text("Output"), OBS_GROUP_NORMAL, pp);
 	}
 
@@ -512,6 +655,12 @@ static void ftptz_get_defaults(obs_data_t *settings)
 				    -40.0);                      // overwrite the default from face_tracker_manager
 	obs_data_set_default_double(settings, "track_z", 0.25);  // Smaller is preferable for PTZ not to lose the face.
 	obs_data_set_default_double(settings, "track_y", +0.00); // +0.00 +0.10 +0.30
+
+	obs_data_set_default_int(settings, "response_profile", ptz_profile_balanced);
+	obs_data_set_default_double(settings, "ptz_smoothness", 1.0);
+	obs_data_set_default_bool(settings, "gamepad_enabled", true);
+	obs_data_set_default_double(settings, "gamepad_deadzone", 15.0);
+	obs_data_set_default_double(settings, "gamepad_sensitivity", 1.0);
 
 	obs_data_set_default_double(settings, "Kp_x_db", 50.0);
 	obs_data_set_default_double(settings, "Kp_y_db", 50.0);
@@ -760,23 +909,21 @@ static void tick_filter(struct face_tracker_ptz *s, float second)
 	s->face_found_last = s->face_found;
 	const float kp_zoom = std::max(s->ptz_query[2], 1.0f);
 	const float kp[3] = {s->kp_x / srwh / kp_zoom, s->kp_y / srwh / kp_zoom, s->kp_z / srwh};
-	for (int i = 0; i < 3; i++) {
-		float x = uf.v[i] * kp[i];
-		s->u_linear[i] = x;
-		int n = s->u[i];
-		switch (i) {
-		case 0:
-			n = pan_flt2raw(x);
-			break;
-		case 1:
-			n = tilt_flt2raw(x);
-			break;
-		default:
-			n = zoom_flt2raw(x, n);
-			break;
-		}
-		s->u[i] = n;
-	}
+
+	float target_pan = uf.v[0] * kp[0];
+	float target_tilt = uf.v[1] * kp[1];
+	float target_zoom = uf.v[2] * kp[2];
+
+	float ramp_pan = 0.0f, ramp_tilt = 0.0f, ramp_zoom = 0.0f;
+	s->ramp.process(target_pan, target_tilt, target_zoom, second, ramp_pan, ramp_tilt, ramp_zoom);
+
+	s->u_linear[0] = ramp_pan;
+	s->u_linear[1] = ramp_tilt;
+	s->u_linear[2] = ramp_zoom;
+
+	s->u[0] = pan_flt2raw(ramp_pan);
+	s->u[1] = tilt_flt2raw(ramp_tilt);
+	s->u[2] = zoom_flt2raw(ramp_zoom, s->u[2]);
 
 	if (s->debug_data_control) {
 		fprintf(s->debug_data_control, "%f\t%f\t%f\t%f\t%d\t%d\t%d\n", os_gettime_ns() * 1e-9, uf.v[0], uf.v[1],
@@ -846,6 +993,18 @@ static inline void send_ptz_cmd_immediate(struct face_tracker_ptz *s)
 	if (!s->ftm->dev)
 		return;
 
+	uint64_t now_ns = obs_get_video_frame_time();
+	bool speed_changed = (s->u[0] != s->last_sent_u[0] || s->u[1] != s->last_sent_u[1] || s->u[2] != s->last_sent_u[2]);
+
+	// Pacing de ~22 Hz (45ms): Se a velocidade não mudou e ainda não passou 45ms, evita inundar a rede com pacotes VISCA duplicados
+	if (!speed_changed && (now_ns - s->last_ptz_cmd_sent_ns < 45000000ULL))
+		return;
+
+	s->last_ptz_cmd_sent_ns = now_ns;
+	s->last_sent_u[0] = s->u[0];
+	s->last_sent_u[1] = s->u[1];
+	s->last_sent_u[2] = s->u[2];
+
 	s->ftm->dev->set_pantiltzoom_speed(s->u_linear[0], s->u_linear[1], s->u_linear[2]);
 
 	for (int i = 0; i < 2 && s->ftm->can_send_ptz_cmd(); i++) {
@@ -866,6 +1025,34 @@ static void ftptz_tick(void *data, float second)
 	auto *s = (struct face_tracker_ptz *)data;
 	const bool was_rendered = s->rendered;
 	s->ftm->tick(second);
+
+	// 1. Atualiza e processa controle por Gamepad (Xbox / PS5)
+	GamepadState gp_state;
+	if (s->gamepad.tick(second, gp_state) && gp_state.manual_active) {
+		float target_pan = gp_state.pan_axis * 24.0f;
+		float target_tilt = gp_state.tilt_axis * 20.0f;
+		float target_zoom = gp_state.zoom_axis * 7.0f;
+
+		float r_pan, r_tilt, r_zoom;
+		s->ramp.process(target_pan, target_tilt, target_zoom, second, r_pan, r_tilt, r_zoom);
+		s->u_linear[0] = r_pan;
+		s->u_linear[1] = r_tilt;
+		s->u_linear[2] = r_zoom;
+		s->u[0] = (int)std::round(r_pan);
+		s->u[1] = (int)std::round(r_tilt);
+		s->u[2] = (int)std::round(r_zoom);
+
+		s->face_found = false;
+		s->detect_err = f3(0, 0, 0);
+
+		send_ptz_cmd_immediate(s);
+
+		if (s->ftm && s->ftm->dev) {
+			s->ftm->dev->tick();
+			s->ptz_query[2] = s->ftm->dev->get_zoom();
+		}
+		return;
+	}
 
 	obs_source_t *target = obs_filter_get_target(s->context);
 	if (!target)

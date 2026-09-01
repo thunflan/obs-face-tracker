@@ -93,6 +93,7 @@ set(PLUGIN_SOURCES
 	src/ptz-backend.cpp
 	src/obsptz-backend.cpp
 	src/dummy-backend.cpp
+	src/gamepad-controller.cpp
 )
 
 if (WITH_PTZ_TCP)

@@ -3,6 +3,8 @@
 #include <vector>
 #include <deque>
 #include "helper.hpp"
+#include "ptz-slew-limiter.hpp"
+#include "gamepad-controller.hpp"
 
 struct face_tracker_ptz
 {
@@ -42,6 +44,12 @@ struct face_tracker_ptz
 	int face_lost_ptz_preset;
 	int face_lost_zoomout_timeout_ms;
 
+	PtzRampController ramp;
+	GamepadController gamepad;
+	float ptz_smoothness;
+	uint64_t last_ptz_cmd_sent_ns;
+	int last_sent_u[3];
+
 	bool debug_faces;
 	bool debug_notrack;
 	bool debug_always_show;
@@ -58,3 +66,4 @@ struct face_tracker_ptz
 	obs_hotkey_pair_id hotkey_pause;
 	obs_hotkey_id hotkey_reset;
 };
+
