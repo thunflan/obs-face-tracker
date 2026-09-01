@@ -40,23 +40,38 @@ GamepadDock::GamepadDock(QWidget *parent)
 	rootLayout->setContentsMargins(8, 8, 8, 8);
 	rootLayout->setSpacing(6);
 
-	// 1. Barra Superior de Conexão
+	// 1. Barra Superior de Conexão e Seleção de Controles
 	QGroupBox *topBox = new QGroupBox(this);
 	QHBoxLayout *topLayout = new QHBoxLayout(topBox);
 	topLayout->setContentsMargins(6, 4, 6, 4);
+	topLayout->setSpacing(8);
 
 	statusLabel = new QLabel(this);
-	statusLabel->setText(obs_module_text("⚪ Nenhum controle detectado"));
+	statusLabel->setText(obs_module_text("⚪ Nenhum controle ativo"));
 	statusLabel->setStyleSheet("font-weight: bold; font-size: 12px; color: #8b949e;");
+
+	QLabel *lblDev = new QLabel(obs_module_text("🎮 Controle:"), this);
+	lblDev->setStyleSheet("font-weight: bold; font-size: 12px;");
+
+	deviceCombo = new QComboBox(this);
+	deviceCombo->setMinimumWidth(230);
+	connect(deviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onDeviceSelected);
+
+	refreshDevicesBtn = new QPushButton(obs_module_text("🔄 Dispositivos"), this);
+	refreshDevicesBtn->setStyleSheet("QPushButton { padding: 4px 8px; }");
+	connect(refreshDevicesBtn, &QPushButton::clicked, this, &GamepadDock::onRefreshDevicesClicked);
 
 	bluetoothBtn = new QPushButton(obs_module_text("🔗 Parear / Bluetooth (Windows)"), this);
 	bluetoothBtn->setStyleSheet("QPushButton { padding: 4px 10px; font-weight: bold; }");
 	connect(bluetoothBtn, &QPushButton::clicked, this, &GamepadDock::onOpenBluetoothClicked);
 
-	refreshScenesBtn = new QPushButton(obs_module_text("🔄 Atualizar Cenas"), this);
+	refreshScenesBtn = new QPushButton(obs_module_text("🔄 Cenas"), this);
 	connect(refreshScenesBtn, &QPushButton::clicked, this, &GamepadDock::onRefreshScenesClicked);
 
 	topLayout->addWidget(statusLabel);
+	topLayout->addWidget(lblDev);
+	topLayout->addWidget(deviceCombo);
+	topLayout->addWidget(refreshDevicesBtn);
 	topLayout->addStretch();
 	topLayout->addWidget(bluetoothBtn);
 	topLayout->addWidget(refreshScenesBtn);
@@ -269,8 +284,9 @@ GamepadDock::GamepadDock(QWidget *parent)
 
 	rootLayout->addWidget(tabs);
 
-	// Preenche lista de cenas inicial
+	// Preenche lista de cenas e dispositivos inicial
 	populateScenes();
+	populateDevices();
 
 	// Timer de polling e atualização da tela de teste (30 Hz)
 	pollTimer = new QTimer(this);
@@ -288,6 +304,38 @@ GamepadDock::~GamepadDock()
 void GamepadDock::onOpenBluetoothClicked()
 {
 	QDesktopServices::openUrl(QUrl("ms-settings:bluetooth"));
+}
+
+void GamepadDock::populateDevices()
+{
+	deviceCombo->blockSignals(true);
+	deviceCombo->clear();
+
+	std::vector<ControllerDeviceInfo> devices = GamepadController::get_instance().get_available_devices();
+	std::string curSelected = GamepadController::get_instance().get_selected_device();
+
+	int selectIdx = 0;
+	for (size_t i = 0; i < devices.size(); i++) {
+		deviceCombo->addItem(QString::fromUtf8(devices[i].name.c_str()), QString::fromUtf8(devices[i].id.c_str()));
+		if (!curSelected.empty() && devices[i].id == curSelected) {
+			selectIdx = (int)i;
+		}
+	}
+
+	deviceCombo->setCurrentIndex(selectIdx);
+	deviceCombo->blockSignals(false);
+}
+
+void GamepadDock::onDeviceSelected(int index)
+{
+	if (index < 0) return;
+	QString devId = deviceCombo->itemData(index).toString();
+	GamepadController::get_instance().set_selected_device(devId.toUtf8().constData());
+}
+
+void GamepadDock::onRefreshDevicesClicked()
+{
+	populateDevices();
 }
 
 void GamepadDock::populateScenes()
@@ -373,10 +421,13 @@ void GamepadDock::onTimerUpdate()
 	bool ok = GamepadController::get_instance().tick(0.033f, state);
 
 	if (ok && state.connected) {
-		statusLabel->setText(obs_module_text("🟢 Controle Conectado (Xbox / PS5)"));
+		std::string actName = GamepadController::get_instance().get_active_device_name();
+		if (actName.empty())
+			actName = "Controle Conectado";
+		statusLabel->setText(QString("🟢 %1").arg(QString::fromUtf8(actName.c_str())));
 		statusLabel->setStyleSheet("font-weight: bold; font-size: 12px; color: #2ea44f;");
 	} else {
-		statusLabel->setText(obs_module_text("⚪ Nenhum controle detectado"));
+		statusLabel->setText(obs_module_text("⚪ Nenhum controle ativo"));
 		statusLabel->setStyleSheet("font-weight: bold; font-size: 12px; color: #8b949e;");
 	}
 
@@ -416,6 +467,8 @@ void GamepadDock::onTimerUpdate()
 
 void GamepadDock::default_properties(obs_data_t *props)
 {
+	obs_data_set_default_string(props, "selected_device", "auto");
+
 	obs_data_set_default_string(props, "scene_dpad_up", "");
 	obs_data_set_default_string(props, "scene_dpad_down", "");
 	obs_data_set_default_string(props, "scene_dpad_left", "");
@@ -434,6 +487,8 @@ void GamepadDock::default_properties(obs_data_t *props)
 
 void GamepadDock::save_properties(obs_data_t *props)
 {
+	obs_data_set_string(props, "selected_device", GamepadController::get_instance().get_selected_device().c_str());
+
 	GamepadSceneConfig &cfg = GamepadController::get_instance().get_scene_config();
 	obs_data_set_string(props, "scene_dpad_up", cfg.scene_dpad_up.c_str());
 	obs_data_set_string(props, "scene_dpad_down", cfg.scene_dpad_down.c_str());
@@ -453,6 +508,11 @@ void GamepadDock::save_properties(obs_data_t *props)
 
 void GamepadDock::load_properties(obs_data_t *props)
 {
+	const char *selDev = obs_data_get_string(props, "selected_device");
+	if (selDev && *selDev) {
+		GamepadController::get_instance().set_selected_device(selDev);
+	}
+
 	GamepadSceneConfig &cfg = GamepadController::get_instance().get_scene_config();
 	cfg.scene_dpad_up = obs_data_get_string(props, "scene_dpad_up");
 	cfg.scene_dpad_down = obs_data_get_string(props, "scene_dpad_down");
@@ -470,6 +530,7 @@ void GamepadDock::load_properties(obs_data_t *props)
 	cfg.scene_rt_dpad_right = obs_data_get_string(props, "scene_rt_dpad_right");
 
 	populateScenes();
+	populateDevices();
 }
 
 static void save_load_gamepad_dock(obs_data_t *save_data, bool saving, void *)

@@ -6,10 +6,58 @@
 #include <algorithm>
 
 #ifdef _WIN32
+#define DIRECTINPUT_VERSION 0x0800
 #include <windows.h>
 #include <xinput.h>
+#include <dinput.h>
+#include <vector>
 
 typedef DWORD(WINAPI *PFN_XInputGetState)(DWORD dwUserIndex, XINPUT_STATE *pState);
+
+struct DInputDeviceInfo {
+	GUID guid;
+	std::string name;
+};
+
+static std::vector<DInputDeviceInfo> s_dinput_devices;
+
+static BOOL CALLBACK EnumJoysticksCallback(const DIDEVICEINSTANCEW *pdidInstance, VOID *)
+{
+	DInputDeviceInfo dev;
+	dev.guid = pdidInstance->guidInstance;
+
+	char nameUtf8[256];
+	os_wcs_to_utf8(pdidInstance->tszInstanceName, 0, nameUtf8, sizeof(nameUtf8));
+	dev.name = nameUtf8;
+
+	s_dinput_devices.push_back(dev);
+	return DIENUM_CONTINUE;
+}
+
+static IDirectInput8W *s_pDI = nullptr;
+static IDirectInputDevice8W *s_pDIDevice = nullptr;
+static GUID s_current_guid = {};
+static bool s_has_active_guid = false;
+
+static void init_directinput()
+{
+	if (!s_pDI) {
+		HRESULT hr = DirectInput8Create(GetModuleHandle(NULL), DIRECTINPUT_VERSION, IID_IDirectInput8W, (VOID **)&s_pDI, NULL);
+		if (FAILED(hr)) {
+			blog(LOG_WARNING, "[Gamepad] Falha ao criar DirectInput8: 0x%08X", (unsigned int)hr);
+		}
+	}
+}
+
+static void release_directinput_device()
+{
+	if (s_pDIDevice) {
+		s_pDIDevice->Unacquire();
+		s_pDIDevice->Release();
+		s_pDIDevice = nullptr;
+	}
+	s_has_active_guid = false;
+}
 #endif
 
 GamepadController &GamepadController::get_instance()
@@ -28,10 +76,10 @@ GamepadController::GamepadController()
 	  prev_buttons(0),
 	  prev_lt(0.0f),
 	  prev_rt(0.0f),
-	  	xinput_dll(nullptr),
-	p_xinput_get_state(nullptr),
-	winmm_dll(nullptr),
-	p_joy_get_pos_ex(nullptr)
+	  xinput_dll(nullptr),
+	  p_xinput_get_state(nullptr),
+	  selected_device_id("auto"),
+	  active_device_name("")
 {
 	scene_config.cut_on_lb = true;
 	scene_config.trans_on_lt = true;
@@ -50,26 +98,22 @@ GamepadController::GamepadController()
 		p_xinput_get_state = (void *)GetProcAddress(mod, "XInputGetState");
 	}
 
-	HMODULE wmod = LoadLibraryW(L"winmm.dll");
-	if (wmod) {
-		winmm_dll = (void *)wmod;
-		p_joy_get_pos_ex = (void *)GetProcAddress(wmod, "joyGetPosEx");
-	}
+	init_directinput();
 #endif
 }
 
 GamepadController::~GamepadController()
 {
 #ifdef _WIN32
+	release_directinput_device();
+	if (s_pDI) {
+		s_pDI->Release();
+		s_pDI = nullptr;
+	}
 	if (xinput_dll) {
 		FreeLibrary((HMODULE)xinput_dll);
 		xinput_dll = nullptr;
 		p_xinput_get_state = nullptr;
-	}
-	if (winmm_dll) {
-		FreeLibrary((HMODULE)winmm_dll);
-		winmm_dll = nullptr;
-		p_joy_get_pos_ex = nullptr;
 	}
 #endif
 }
@@ -110,6 +154,217 @@ static void switch_scene_by_name(const std::string &scene_name, bool preview_onl
 	obs_frontend_source_list_free(&scenes);
 }
 
+std::vector<ControllerDeviceInfo> GamepadController::get_available_devices()
+{
+	std::vector<ControllerDeviceInfo> list;
+
+	ControllerDeviceInfo autoDev;
+	autoDev.id = "auto";
+	autoDev.name = "⚡ Automático (Primeiro Ativo)";
+	autoDev.is_xinput = false;
+	autoDev.index = -1;
+	list.push_back(autoDev);
+
+#ifdef _WIN32
+	// 1. Checa slots XInput (Xbox)
+	if (p_xinput_get_state) {
+		PFN_XInputGetState fnGetState = (PFN_XInputGetState)p_xinput_get_state;
+		XINPUT_STATE xstate;
+		for (DWORD i = 0; i < 4; i++) {
+			if (fnGetState(i, &xstate) == ERROR_SUCCESS) {
+				ControllerDeviceInfo dev;
+				dev.id = "xinput_" + std::to_string(i);
+				dev.name = "Xbox Controller (Slot " + std::to_string(i + 1) + ")";
+				dev.is_xinput = true;
+				dev.index = (int)i;
+				list.push_back(dev);
+			}
+		}
+	}
+
+	// 2. Enumera DirectInput (PlayStation, Wireless Controller, GameSir, etc.)
+	init_directinput();
+	if (s_pDI) {
+		s_dinput_devices.clear();
+		s_pDI->EnumDevices(DI8DEVCLASS_GAMECTRL, EnumJoysticksCallback, NULL, DIEDFL_ATTACHEDONLY);
+		for (size_t i = 0; i < s_dinput_devices.size(); i++) {
+			ControllerDeviceInfo dev;
+			dev.id = "dinput_" + std::to_string(i);
+			dev.name = s_dinput_devices[i].name;
+			dev.is_xinput = false;
+			dev.index = (int)i;
+			list.push_back(dev);
+		}
+	}
+#endif
+
+	return list;
+}
+
+#ifdef _WIN32
+static bool poll_xinput_slot(PFN_XInputGetState fnGetState, DWORD slot, GamepadState &state, float deadzone, float sensitivity)
+{
+	XINPUT_STATE xstate;
+	ZeroMemory(&xstate, sizeof(XINPUT_STATE));
+	if (fnGetState(slot, &xstate) != ERROR_SUCCESS)
+		return false;
+
+	state.connected = true;
+
+	float raw_lx = (float)xstate.Gamepad.sThumbLX / 32767.0f;
+	float raw_ly = (float)xstate.Gamepad.sThumbLY / 32767.0f;
+	raw_lx = std::clamp(raw_lx, -1.0f, 1.0f);
+	raw_ly = std::clamp(raw_ly, -1.0f, 1.0f);
+
+	state.pan_axis = apply_axis_curve(raw_lx, deadzone) * sensitivity;
+	state.tilt_axis = apply_axis_curve(raw_ly, deadzone) * sensitivity;
+
+	state.trigger_left = (float)xstate.Gamepad.bLeftTrigger / 255.0f;
+	state.trigger_right = (float)xstate.Gamepad.bRightTrigger / 255.0f;
+
+	float zoom = 0.0f;
+	if (state.trigger_right > 0.05f)
+		zoom += (state.trigger_right - 0.05f) / 0.95f;
+	if (state.trigger_left > 0.05f)
+		zoom -= (state.trigger_left - 0.05f) / 0.95f;
+	state.zoom_axis = std::clamp(zoom * sensitivity, -1.0f, 1.0f);
+
+	uint32_t b = xstate.Gamepad.wButtons;
+	state.buttons = b;
+	state.btn_a = (b & XINPUT_GAMEPAD_A) != 0;
+	state.btn_b = (b & XINPUT_GAMEPAD_B) != 0;
+	state.btn_x = (b & XINPUT_GAMEPAD_X) != 0;
+	state.btn_y = (b & XINPUT_GAMEPAD_Y) != 0;
+	state.btn_lb = (b & XINPUT_GAMEPAD_LEFT_SHOULDER) != 0;
+	state.btn_rb = (b & XINPUT_GAMEPAD_RIGHT_SHOULDER) != 0;
+	state.btn_lt = (state.trigger_left > 0.35f);
+	state.btn_rt = (state.trigger_right > 0.35f);
+	state.dpad_up = (b & XINPUT_GAMEPAD_DPAD_UP) != 0;
+	state.dpad_down = (b & XINPUT_GAMEPAD_DPAD_DOWN) != 0;
+	state.dpad_left = (b & XINPUT_GAMEPAD_DPAD_LEFT) != 0;
+	state.dpad_right = (b & XINPUT_GAMEPAD_DPAD_RIGHT) != 0;
+	state.btn_start = (b & XINPUT_GAMEPAD_START) != 0;
+	state.btn_back = (b & XINPUT_GAMEPAD_BACK) != 0;
+	state.btn_thumb_l = (b & XINPUT_GAMEPAD_LEFT_THUMB) != 0;
+	state.btn_thumb_r = (b & XINPUT_GAMEPAD_RIGHT_THUMB) != 0;
+
+	return true;
+}
+
+static bool poll_dinput_device(const GUID &guid, GamepadState &state, float deadzone, float sensitivity)
+{
+	if (!s_pDI) return false;
+
+	if (!s_pDIDevice || !s_has_active_guid || memcmp(&s_current_guid, &guid, sizeof(GUID)) != 0) {
+		release_directinput_device();
+		HRESULT hr = s_pDI->CreateDevice(guid, &s_pDIDevice, NULL);
+		if (FAILED(hr) || !s_pDIDevice)
+			return false;
+
+		hr = s_pDIDevice->SetDataFormat(&c_dfDIJoystick2);
+		if (FAILED(hr)) {
+			release_directinput_device();
+			return false;
+		}
+
+		HWND hwnd = (HWND)obs_frontend_get_main_window();
+		if (!hwnd)
+			hwnd = GetDesktopWindow();
+		s_pDIDevice->SetCooperativeLevel(hwnd, DISCL_BACKGROUND | DISCL_NONEXCLUSIVE);
+
+		s_current_guid = guid;
+		s_has_active_guid = true;
+		s_pDIDevice->Acquire();
+	}
+
+	DIJOYSTATE2 js;
+	ZeroMemory(&js, sizeof(DIJOYSTATE2));
+	HRESULT hr = s_pDIDevice->Poll();
+	hr = s_pDIDevice->GetDeviceState(sizeof(DIJOYSTATE2), &js);
+	if (hr == DIERR_INPUTLOST || hr == DIERR_NOTACQUIRED) {
+		s_pDIDevice->Acquire();
+		hr = s_pDIDevice->GetDeviceState(sizeof(DIJOYSTATE2), &js);
+	}
+
+	if (FAILED(hr))
+		return false;
+
+	state.connected = true;
+
+	// Normaliza analógico esquerdo (Pan e Tilt)
+	// Valores de 0 a 65535, centro em 32768
+	float raw_lx = ((float)js.lX - 32768.0f) / 32768.0f;
+	float raw_ly = -((float)js.lY - 32768.0f) / 32768.0f;
+	raw_lx = std::clamp(raw_lx, -1.0f, 1.0f);
+	raw_ly = std::clamp(raw_ly, -1.0f, 1.0f);
+
+	state.pan_axis = apply_axis_curve(raw_lx, deadzone) * sensitivity;
+	state.tilt_axis = apply_axis_curve(raw_ly, deadzone) * sensitivity;
+
+	// Botões para o Wireless Controller / PlayStation / DirectInput
+	// js.rgbButtons[0] = Quadrado/X, [1] = Cruz/A, [2] = Círculo/B, [3] = Triângulo/Y
+	// js.rgbButtons[4] = L1 (LB), [5] = R1 (RB)
+	// js.rgbButtons[6] = L2 (LT), [7] = R2 (RT)
+	// js.rgbButtons[8] = Share/Back, [9] = Options/Start
+	// js.rgbButtons[10] = L3, [11] = R3
+	state.btn_x = (js.rgbButtons[0] & 0x80) != 0;
+	state.btn_a = (js.rgbButtons[1] & 0x80) != 0;
+	state.btn_b = (js.rgbButtons[2] & 0x80) != 0;
+	state.btn_y = (js.rgbButtons[3] & 0x80) != 0;
+	state.btn_lb = (js.rgbButtons[4] & 0x80) != 0;
+	state.btn_rb = (js.rgbButtons[5] & 0x80) != 0;
+	state.btn_lt = (js.rgbButtons[6] & 0x80) != 0;
+	state.btn_rt = (js.rgbButtons[7] & 0x80) != 0;
+	state.btn_back = (js.rgbButtons[8] & 0x80) != 0;
+	state.btn_start = (js.rgbButtons[9] & 0x80) != 0;
+	state.btn_thumb_l = (js.rgbButtons[10] & 0x80) != 0;
+	state.btn_thumb_r = (js.rgbButtons[11] & 0x80) != 0;
+
+	// Gatilhos analógicos ou digitais
+	state.trigger_left = state.btn_lt ? 1.0f : 0.0f;
+	state.trigger_right = state.btn_rt ? 1.0f : 0.0f;
+
+	float zoom = 0.0f;
+	if (state.trigger_right > 0.05f || state.btn_rt)
+		zoom += 1.0f;
+	if (state.trigger_left > 0.05f || state.btn_lt)
+		zoom -= 1.0f;
+	state.zoom_axis = std::clamp(zoom * sensitivity, -1.0f, 1.0f);
+
+	// D-Pad via POV Hat
+	DWORD pov = js.rgdwPOV[0];
+	if (pov != 0xFFFFFFFF && pov != 65535) {
+		if (pov >= 31500 || pov <= 4500)
+			state.dpad_up = true;
+		if (pov >= 4500 && pov <= 13500)
+			state.dpad_right = true;
+		if (pov >= 13500 && pov <= 22500)
+			state.dpad_down = true;
+		if (pov >= 22500 && pov <= 31500)
+			state.dpad_left = true;
+	}
+
+	uint32_t b = 0;
+	if (state.btn_a) b |= XINPUT_GAMEPAD_A;
+	if (state.btn_b) b |= XINPUT_GAMEPAD_B;
+	if (state.btn_x) b |= XINPUT_GAMEPAD_X;
+	if (state.btn_y) b |= XINPUT_GAMEPAD_Y;
+	if (state.btn_lb) b |= XINPUT_GAMEPAD_LEFT_SHOULDER;
+	if (state.btn_rb) b |= XINPUT_GAMEPAD_RIGHT_SHOULDER;
+	if (state.btn_start) b |= XINPUT_GAMEPAD_START;
+	if (state.btn_back) b |= XINPUT_GAMEPAD_BACK;
+	if (state.btn_thumb_l) b |= XINPUT_GAMEPAD_LEFT_THUMB;
+	if (state.btn_thumb_r) b |= XINPUT_GAMEPAD_RIGHT_THUMB;
+	if (state.dpad_up) b |= XINPUT_GAMEPAD_DPAD_UP;
+	if (state.dpad_down) b |= XINPUT_GAMEPAD_DPAD_DOWN;
+	if (state.dpad_left) b |= XINPUT_GAMEPAD_DPAD_LEFT;
+	if (state.dpad_right) b |= XINPUT_GAMEPAD_DPAD_RIGHT;
+	state.buttons = b;
+
+	return true;
+}
+#endif
+
 bool GamepadController::poll_state(GamepadState &state)
 {
 	memset(&state, 0, sizeof(GamepadState));
@@ -117,143 +372,65 @@ bool GamepadController::poll_state(GamepadState &state)
 	state.manual_active = is_manual_override;
 
 #ifdef _WIN32
-	// 1. TENTA PRIMEIRO VIA XINPUT (Xbox padrão)
-	if (p_xinput_get_state) {
-		PFN_XInputGetState fnGetState = (PFN_XInputGetState)p_xinput_get_state;
-		XINPUT_STATE xstate;
-		ZeroMemory(&xstate, sizeof(XINPUT_STATE));
+	PFN_XInputGetState fnGetState = (PFN_XInputGetState)p_xinput_get_state;
 
-		for (DWORD i = 0; i < 4; i++) {
-			if (fnGetState(i, &xstate) == ERROR_SUCCESS) {
-				state.connected = true;
+	// Caso 1: Usuário escolheu um slot específico do XInput
+	if (selected_device_id.rfind("xinput_", 0) == 0 && fnGetState) {
+		DWORD slot = (DWORD)std::atoi(selected_device_id.substr(7).c_str());
+		if (poll_xinput_slot(fnGetState, slot, state, deadzone, sensitivity)) {
+			active_device_name = "Xbox Controller (Slot " + std::to_string(slot + 1) + ")";
+			last_state = state;
+			return true;
+		}
+	}
 
-				float raw_lx = (float)xstate.Gamepad.sThumbLX / 32767.0f;
-				float raw_ly = (float)xstate.Gamepad.sThumbLY / 32767.0f;
-				raw_lx = std::clamp(raw_lx, -1.0f, 1.0f);
-				raw_ly = std::clamp(raw_ly, -1.0f, 1.0f);
-
-				state.pan_axis = apply_axis_curve(raw_lx, deadzone) * sensitivity;
-				state.tilt_axis = apply_axis_curve(raw_ly, deadzone) * sensitivity;
-
-				state.trigger_left = (float)xstate.Gamepad.bLeftTrigger / 255.0f;
-				state.trigger_right = (float)xstate.Gamepad.bRightTrigger / 255.0f;
-
-				float zoom = 0.0f;
-				if (state.trigger_right > 0.05f)
-					zoom += (state.trigger_right - 0.05f) / 0.95f;
-				if (state.trigger_left > 0.05f)
-					zoom -= (state.trigger_left - 0.05f) / 0.95f;
-				state.zoom_axis = std::clamp(zoom * sensitivity, -1.0f, 1.0f);
-
-				uint32_t b = xstate.Gamepad.wButtons;
-				state.buttons = b;
-				state.btn_a = (b & XINPUT_GAMEPAD_A) != 0;
-				state.btn_b = (b & XINPUT_GAMEPAD_B) != 0;
-				state.btn_x = (b & XINPUT_GAMEPAD_X) != 0;
-				state.btn_y = (b & XINPUT_GAMEPAD_Y) != 0;
-				state.btn_lb = (b & XINPUT_GAMEPAD_LEFT_SHOULDER) != 0;
-				state.btn_rb = (b & XINPUT_GAMEPAD_RIGHT_SHOULDER) != 0;
-				state.btn_lt = (state.trigger_left > 0.35f);
-				state.btn_rt = (state.trigger_right > 0.35f);
-				state.dpad_up = (b & XINPUT_GAMEPAD_DPAD_UP) != 0;
-				state.dpad_down = (b & XINPUT_GAMEPAD_DPAD_DOWN) != 0;
-				state.dpad_left = (b & XINPUT_GAMEPAD_DPAD_LEFT) != 0;
-				state.dpad_right = (b & XINPUT_GAMEPAD_DPAD_RIGHT) != 0;
-				state.btn_start = (b & XINPUT_GAMEPAD_START) != 0;
-				state.btn_back = (b & XINPUT_GAMEPAD_BACK) != 0;
-				state.btn_thumb_l = (b & XINPUT_GAMEPAD_LEFT_THUMB) != 0;
-				state.btn_thumb_r = (b & XINPUT_GAMEPAD_RIGHT_THUMB) != 0;
-
+	// Caso 2: Usuário escolheu um dispositivo específico de DirectInput
+	if (selected_device_id.rfind("dinput_", 0) == 0) {
+		int idx = std::atoi(selected_device_id.substr(7).c_str());
+		if (idx >= 0 && idx < (int)s_dinput_devices.size()) {
+			if (poll_dinput_device(s_dinput_devices[idx].guid, state, deadzone, sensitivity)) {
+				active_device_name = s_dinput_devices[idx].name;
 				last_state = state;
 				return true;
 			}
 		}
 	}
 
-	// 2. SE NÃO HOUVER XINPUT, TENTA VIA WINMM / DIRECTINPUT (GameSir Nova Lite, Bluetooth Wireless Controller, PS4/PS5, Switch)
-	if (p_joy_get_pos_ex) {
-		typedef UINT(WINAPI * PFN_joyGetPosEx)(UINT uJoyID, LPJOYINFOEX pji);
-		PFN_joyGetPosEx fnJoy = (PFN_joyGetPosEx)p_joy_get_pos_ex;
-		JOYINFOEX jie;
-		jie.dwSize = sizeof(JOYINFOEX);
-		jie.dwFlags = JOY_RETURNALL;
-
-		for (UINT i = 0; i < 16; i++) {
-			if (fnJoy(i, &jie) == 0) { // JOYERR_NOERROR
-				state.connected = true;
-
-				float raw_lx = ((float)jie.dwXpos - 32767.5f) / 32767.5f;
-				float raw_ly = -((float)jie.dwYpos - 32767.5f) / 32767.5f;
-				raw_lx = std::clamp(raw_lx, -1.0f, 1.0f);
-				raw_ly = std::clamp(raw_ly, -1.0f, 1.0f);
-
-				state.pan_axis = apply_axis_curve(raw_lx, deadzone) * sensitivity;
-				state.tilt_axis = apply_axis_curve(raw_ly, deadzone) * sensitivity;
-
-				// Gatilhos e Botões
-				state.btn_a = (jie.dwButtons & (1 << 0)) != 0;
-				state.btn_b = (jie.dwButtons & (1 << 1)) != 0;
-				state.btn_x = (jie.dwButtons & (1 << 2)) != 0 || (jie.dwButtons & (1 << 3)) != 0;
-				state.btn_y = (jie.dwButtons & (1 << 3)) != 0 || (jie.dwButtons & (1 << 4)) != 0;
-				state.btn_lb = (jie.dwButtons & (1 << 4)) != 0;
-				state.btn_rb = (jie.dwButtons & (1 << 5)) != 0;
-				state.btn_lt = (jie.dwButtons & (1 << 6)) != 0;
-				state.btn_rt = (jie.dwButtons & (1 << 7)) != 0;
-				state.btn_back = (jie.dwButtons & (1 << 8)) != 0;
-				state.btn_start = (jie.dwButtons & (1 << 9)) != 0;
-				state.btn_thumb_l = (jie.dwButtons & (1 << 10)) != 0;
-				state.btn_thumb_r = (jie.dwButtons & (1 << 11)) != 0;
-
-				state.trigger_left = state.btn_lt ? 1.0f : 0.0f;
-				state.trigger_right = state.btn_rt ? 1.0f : 0.0f;
-
-				float zoom = 0.0f;
-				if (state.btn_rt)
-					zoom += 1.0f;
-				if (state.btn_lt)
-					zoom -= 1.0f;
-				state.zoom_axis = std::clamp(zoom * sensitivity, -1.0f, 1.0f);
-
-				// D-Pad via POV
-				if (jie.dwPOV != 65535) {
-					if (jie.dwPOV >= 31500 || jie.dwPOV <= 4500)
-						state.dpad_up = true;
-					if (jie.dwPOV >= 4500 && jie.dwPOV <= 13500)
-						state.dpad_right = true;
-					if (jie.dwPOV >= 13500 && jie.dwPOV <= 22500)
-						state.dpad_down = true;
-					if (jie.dwPOV >= 22500 && jie.dwPOV <= 31500)
-						state.dpad_left = true;
+	// Caso 3: Automático (Tenta XInput primeiro, depois DirectInput)
+	if (selected_device_id.empty() || selected_device_id == "auto") {
+		if (fnGetState) {
+			for (DWORD i = 0; i < 4; i++) {
+				if (poll_xinput_slot(fnGetState, i, state, deadzone, sensitivity)) {
+					active_device_name = "Xbox Controller (Slot " + std::to_string(i + 1) + ")";
+					last_state = state;
+					return true;
 				}
+			}
+		}
 
-				uint32_t b = 0;
-				if (state.btn_a) b |= XINPUT_GAMEPAD_A;
-				if (state.btn_b) b |= XINPUT_GAMEPAD_B;
-				if (state.btn_x) b |= XINPUT_GAMEPAD_X;
-				if (state.btn_y) b |= XINPUT_GAMEPAD_Y;
-				if (state.btn_lb) b |= XINPUT_GAMEPAD_LEFT_SHOULDER;
-				if (state.btn_rb) b |= XINPUT_GAMEPAD_RIGHT_SHOULDER;
-				if (state.btn_start) b |= XINPUT_GAMEPAD_START;
-				if (state.btn_back) b |= XINPUT_GAMEPAD_BACK;
-				if (state.btn_thumb_l) b |= XINPUT_GAMEPAD_LEFT_THUMB;
-				if (state.btn_thumb_r) b |= XINPUT_GAMEPAD_RIGHT_THUMB;
-				if (state.dpad_up) b |= XINPUT_GAMEPAD_DPAD_UP;
-				if (state.dpad_down) b |= XINPUT_GAMEPAD_DPAD_DOWN;
-				if (state.dpad_left) b |= XINPUT_GAMEPAD_DPAD_LEFT;
-				if (state.dpad_right) b |= XINPUT_GAMEPAD_DPAD_RIGHT;
-				state.buttons = b;
-
-				last_state = state;
-				return true;
+		// Se nenhum XInput respondeu, tenta DirectInput
+		init_directinput();
+		if (s_pDI) {
+			if (s_dinput_devices.empty()) {
+				s_pDI->EnumDevices(DI8DEVCLASS_GAMECTRL, EnumJoysticksCallback, NULL, DIEDFL_ATTACHEDONLY);
+			}
+			for (size_t i = 0; i < s_dinput_devices.size(); i++) {
+				if (poll_dinput_device(s_dinput_devices[i].guid, state, deadzone, sensitivity)) {
+					active_device_name = s_dinput_devices[i].name;
+					last_state = state;
+					return true;
+				}
 			}
 		}
 	}
 
 	state.connected = false;
+	active_device_name = "";
 	last_state = state;
 	return false;
 #else
 	state.connected = false;
+	active_device_name = "";
 	return false;
 #endif
 }

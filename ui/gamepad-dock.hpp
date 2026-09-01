@@ -23,18 +23,23 @@ public:
 	static void default_properties(obs_data_t *props);
 	void save_properties(obs_data_t *props);
 	void load_properties(obs_data_t *props);
+	void populateDevices();
 
 private slots:
 	void onTimerUpdate();
 	void onOpenBluetoothClicked();
 	void onRefreshScenesClicked();
 	void onSceneMappingChanged();
+	void onDeviceSelected(int index);
+	void onRefreshDevicesClicked();
 
 private:
 	QTimer *pollTimer;
 
 	// Barra Superior
 	QLabel *statusLabel;
+	QComboBox *deviceCombo;
+	QPushButton *refreshDevicesBtn;
 	QPushButton *bluetoothBtn;
 	QPushButton *refreshScenesBtn;
 

@@ -51,6 +51,13 @@ struct GamepadSceneConfig {
 	bool trans_on_lt; // Transição Suave no LT
 };
 
+struct ControllerDeviceInfo {
+	std::string id;        // "auto", "xinput_0", "dinput_0", etc.
+	std::string name;      // Nome amigável para exibição no Dropdown
+	bool is_xinput;
+	int index;
+};
+
 class GamepadController {
 public:
 	typedef std::function<void(int camera_id, int pan_speed, int tilt_speed, int zoom_speed)> SpeedCallback;
@@ -79,8 +86,9 @@ private:
 
 	void *xinput_dll;
 	void *p_xinput_get_state;
-	void *winmm_dll;
-	void *p_joy_get_pos_ex;
+
+	std::string selected_device_id;
+	std::string active_device_name;
 
 public:
 	GamepadController();
@@ -108,6 +116,12 @@ public:
 	GamepadSceneConfig &get_scene_config() { return scene_config; }
 	const GamepadSceneConfig &get_scene_config() const { return scene_config; }
 	void set_scene_config(const GamepadSceneConfig &cfg) { scene_config = cfg; }
+
+	// Dispositivos e Dropdown de seleção
+	std::vector<ControllerDeviceInfo> get_available_devices();
+	void set_selected_device(const std::string &id) { selected_device_id = id; }
+	std::string get_selected_device() const { return selected_device_id; }
+	std::string get_active_device_name() const { return active_device_name; }
 
 	// Lê o estado atual do controle e dispara as ações necessárias
 	bool tick(float dt, GamepadState &state);
