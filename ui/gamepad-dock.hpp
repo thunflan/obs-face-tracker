@@ -30,6 +30,7 @@ private slots:
 	void onTimerUpdate();
 	void onOpenBluetoothClicked();
 	void onRefreshScenesClicked();
+	void onSceneMappingChanged();
 	void onDeviceSelected(int index);
 	void onRefreshDevicesClicked();
 	void onCurveGammaChanged(int val);
