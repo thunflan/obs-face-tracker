@@ -2,7 +2,9 @@
 
 #include <deque>
 #include <string>
+#include <memory>
 #include "face-tracker-base.h"
+#include "one-euro-filter.hpp"
 
 class face_tracker_manager {
 public:
@@ -28,6 +30,7 @@ public:
 		std::vector<pointf_s> landmark;
 		float att;
 		float score_first;
+		std::shared_ptr<RectFilter> rect_filter;
 		enum tracker_state_e {
 			tracker_state_init = 0,
 			tracker_state_reset_texture, // texture has been set, position is not set.

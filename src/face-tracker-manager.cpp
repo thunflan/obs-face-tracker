@@ -1,4 +1,5 @@
 #include <obs-module.h>
+#include <util/platform.h>
 #include "plugin-macros.generated.h"
 #include "face-tracker-manager.hpp"
 #include "face-detector-dlib-hog.h"
@@ -55,6 +56,8 @@ face_tracker_manager::~face_tracker_manager()
 inline void face_tracker_manager::retire_tracker(int ix)
 {
 	debug_track_thread("%p retire_tracker(%d %p)", this, ix, trackers[ix].tracker);
+	if (trackers[ix].rect_filter)
+		trackers[ix].rect_filter->reset();
 	trackers_idlepool.push_back(trackers[ix]);
 	trackers[ix].tracker->request_suspend();
 	trackers.erase(trackers.begin() + ix);
@@ -260,6 +263,13 @@ inline void face_tracker_manager::stage_to_trackers()
 		} else if (t.state == tracker_inst_s::tracker_state_first_track) {
 			if (!t.tracker->trylock()) {
 				bool ret = t.tracker->get_face(t.rect);
+				if (ret) {
+					if (!t.rect_filter)
+						t.rect_filter = std::make_shared<RectFilter>();
+					t.rect_filter->reset();
+					double now = (double)os_gettime_ns() * 1e-9;
+					t.rect_filter->filter_rect(t.rect.x0, t.rect.y0, t.rect.x1, t.rect.y1, now);
+				}
 				t.crop_rect = t.crop_tracker;
 				debug_track("tracker_state_first_track %p %d %d %d %d %f", t.tracker, t.rect.x0,
 					    t.rect.y0, t.rect.x1, t.rect.y1, t.rect.score);
@@ -278,6 +288,12 @@ inline void face_tracker_manager::stage_to_trackers()
 		} else if (t.state == tracker_inst_s::tracker_state_available) {
 			if (!t.tracker->trylock()) {
 				bool ret = t.tracker->get_face(t.rect);
+				if (ret) {
+					if (!t.rect_filter)
+						t.rect_filter = std::make_shared<RectFilter>();
+					double now = (double)os_gettime_ns() * 1e-9;
+					t.rect_filter->filter_rect(t.rect.x0, t.rect.y0, t.rect.x1, t.rect.y1, now);
+				}
 				t.crop_rect = t.crop_tracker;
 				debug_track("tracker_state_available %p %d %d %d %d %f landmark=%d", t.tracker,
 					    t.rect.x0, t.rect.y0, t.rect.x1, t.rect.y1, t.rect.score,
@@ -410,40 +426,55 @@ void face_tracker_manager::get_properties(obs_properties_t *pp)
 	obs_property_t *p;
 	std::string data_path = obs_get_module_data_path(obs_current_module());
 
-	obs_properties_add_float(pp, "upsize_l", obs_module_text("Left"), -0.4, 4.0, 0.2);
-	obs_properties_add_float(pp, "upsize_r", obs_module_text("Right"), -0.4, 4.0, 0.2);
-	obs_properties_add_float(pp, "upsize_t", obs_module_text("Top"), -0.4, 4.0, 0.2);
-	obs_properties_add_float(pp, "upsize_b", obs_module_text("Bottom"), -0.4, 4.0, 0.2);
-	obs_properties_add_float(pp, "scale", obs_module_text("Scale image"), 1.0, 16.0, 1.0);
-	p = obs_properties_add_list(pp, "detector_engine", obs_module_text("Detector"), OBS_COMBO_TYPE_LIST,
+	p = obs_properties_add_float(pp, "upsize_l", obs_module_text("UpsizeLeft"), -0.4, 4.0, 0.2);
+	obs_property_set_long_description(p, obs_module_text("UpsizeLeft.Desc"));
+	p = obs_properties_add_float(pp, "upsize_r", obs_module_text("UpsizeRight"), -0.4, 4.0, 0.2);
+	obs_property_set_long_description(p, obs_module_text("UpsizeRight.Desc"));
+	p = obs_properties_add_float(pp, "upsize_t", obs_module_text("UpsizeTop"), -0.4, 4.0, 0.2);
+	obs_property_set_long_description(p, obs_module_text("UpsizeTop.Desc"));
+	p = obs_properties_add_float(pp, "upsize_b", obs_module_text("UpsizeBottom"), -0.4, 4.0, 0.2);
+	obs_property_set_long_description(p, obs_module_text("UpsizeBottom.Desc"));
+
+	p = obs_properties_add_float(pp, "scale", obs_module_text("ScaleImage"), 1.0, 16.0, 1.0);
+	obs_property_set_long_description(p, obs_module_text("ScaleImage.Desc"));
+
+	p = obs_properties_add_list(pp, "detector_engine", obs_module_text("DetectorEngine"), OBS_COMBO_TYPE_LIST,
 				    OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(p, obs_module_text("Detector.dlib.hog"), (int)engine_dlib_hog);
 	obs_property_list_add_int(p, obs_module_text("Detector.dlib.cnn"), (int)engine_dlib_cnn);
-	obs_properties_add_path(pp, "detector_dlib_hog_model", obs_module_text("Dlib HOG model"), OBS_PATH_FILE,
-				"Data Files (*.dat);;"
-				"All Files (*.*)",
-				(data_path + "/" DIR_DLIB_CNN).c_str());
-	obs_properties_add_path(pp, "detector_dlib_cnn_model", obs_module_text("Dlib CNN model"), OBS_PATH_FILE,
-				"Data Files (*.dat);;"
-				"All Files (*.*)",
-				(data_path + "/" DIR_DLIB_CNN).c_str());
-	obs_properties_add_int(pp, "detector_crop_l", obs_module_text("Crop left for detector"), 0, 1920, 1);
-	obs_properties_add_int(pp, "detector_crop_r", obs_module_text("Crop right for detector"), 0, 1920, 1);
-	obs_properties_add_int(pp, "detector_crop_t", obs_module_text("Crop top for detector"), 0, 1080, 1);
-	obs_properties_add_int(pp, "detector_crop_b", obs_module_text("Crop bottom for detector"), 0, 1080, 1);
-	obs_properties_add_bool(pp, "landmark_detection", obs_module_text("Enable landmark detection"));
-	p = obs_properties_add_path(pp, "landmark_detection_data", obs_module_text("Landmark detection data"),
-				    OBS_PATH_FILE,
-				    "Data Files (*.dat);;"
-				    "All Files (*.*)",
+	obs_property_set_long_description(p, obs_module_text("DetectorEngine.Desc"));
+
+	p = obs_properties_add_path(pp, "detector_dlib_hog_model", obs_module_text("DlibHogModel"), OBS_PATH_FILE,
+				    "Data Files (*.dat);;All Files (*.*)", (data_path + "/" DIR_DLIB_HOG).c_str());
+	obs_property_set_long_description(p, obs_module_text("DlibHogModel.Desc"));
+
+	p = obs_properties_add_path(pp, "detector_dlib_cnn_model", obs_module_text("DlibCnnModel"), OBS_PATH_FILE,
+				    "Data Files (*.dat);;All Files (*.*)", (data_path + "/" DIR_DLIB_CNN).c_str());
+	obs_property_set_long_description(p, obs_module_text("DlibCnnModel.Desc"));
+
+	p = obs_properties_add_int(pp, "detector_crop_l", obs_module_text("CropLeft"), 0, 1920, 1);
+	obs_property_set_long_description(p, obs_module_text("CropLeft.Desc"));
+	p = obs_properties_add_int(pp, "detector_crop_r", obs_module_text("CropRight"), 0, 1920, 1);
+	obs_property_set_long_description(p, obs_module_text("CropRight.Desc"));
+	p = obs_properties_add_int(pp, "detector_crop_t", obs_module_text("CropTop"), 0, 1080, 1);
+	obs_property_set_long_description(p, obs_module_text("CropTop.Desc"));
+	p = obs_properties_add_int(pp, "detector_crop_b", obs_module_text("CropBottom"), 0, 1080, 1);
+	obs_property_set_long_description(p, obs_module_text("CropBottom.Desc"));
+
+	p = obs_properties_add_bool(pp, "landmark_detection", obs_module_text("LandmarkDetection"));
+	obs_property_set_long_description(p, obs_module_text("LandmarkDetection.Desc"));
+	p = obs_properties_add_path(pp, "landmark_detection_data", obs_module_text("LandmarkData"), OBS_PATH_FILE,
+				    "Data Files (*.dat);;All Files (*.*)",
 				    (data_path + "/" DIR_DLIB_LANDMARK).c_str());
-	obs_property_set_long_description(
-		p, obs_module_text("You can get the shape_predictor_68_face_landmarks.dat file from: "
-				   "http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2"));
-	p = obs_properties_add_bool(pp, "tracking_th_en", obs_module_text("Set tracking threshold"));
+	obs_property_set_long_description(p, obs_module_text("LandmarkData.Desc"));
+
+	p = obs_properties_add_bool(pp, "tracking_th_en", obs_module_text("TrackingThEn"));
+	obs_property_set_long_description(p, obs_module_text("TrackingThEn.Desc"));
 	obs_property_set_modified_callback(p, tracking_th_en_modified);
-	p = obs_properties_add_float(pp, "tracking_th_dB", obs_module_text("Tracking threshold"), -120.0, -20.0, 5.0);
+
+	p = obs_properties_add_float(pp, "tracking_th_dB", obs_module_text("TrackingThDb"), -120.0, -20.0, 5.0);
 	obs_property_float_set_suffix(p, " dB");
+	obs_property_set_long_description(p, obs_module_text("TrackingThDb.Desc"));
 }
 
 void face_tracker_manager::get_defaults(obs_data_t *settings)

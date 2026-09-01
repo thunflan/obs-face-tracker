@@ -90,6 +90,7 @@ void face_detector_dlib_cnn::detect_main()
 	if (img.nc() < 80 || img.nr() < 80) {
 		if (p->n_error++ < MAX_ERROR)
 			blog(LOG_ERROR, "too small image: %dx%d", (int)img.nc(), (int)img.nr());
+		p->tex.reset();
 		return;
 	} else if (p->n_error) {
 		p->n_error--;
@@ -98,28 +99,47 @@ void face_detector_dlib_cnn::detect_main()
 	if (!p->net_loaded) {
 		p->net_loaded = true;
 		try {
-			blog(LOG_INFO, "loading file '%s'", p->model_filename.c_str());
+			blog(LOG_INFO, "loading CNN model file '%s'", p->model_filename.c_str());
+#ifndef DLIB_USE_CUDA
+			blog(LOG_WARNING,
+			     "face_detector_dlib_cnn: Plugin was compiled without CUDA! Running CNN on CPU will cause significant latency and may freeze OBS.");
+#endif
 			deserialize(p->model_filename.c_str()) >> p->net;
 			p->has_error = false;
+			blog(LOG_INFO, "CNN model loaded successfully.");
+		} catch (const std::exception &e) {
+			blog(LOG_ERROR, "failed to load CNN model '%s': %s", p->model_filename.c_str(), e.what());
+			p->has_error = true;
 		} catch (...) {
-			blog(LOG_ERROR, "failed to load file '%s'", p->model_filename.c_str());
+			blog(LOG_ERROR, "failed to load CNN model '%s' (unknown error)", p->model_filename.c_str());
 			p->has_error = true;
 		}
 	}
 
-	if (p->has_error)
+	if (p->has_error) {
+		p->rects.clear();
+		p->tex.reset();
 		return;
+	}
 
-	auto dets = p->net(img);
-	p->rects.resize(dets.size());
-	for (size_t i = 0; i < dets.size(); i++) {
-		auto &det = dets[i];
-		rect_s &r = p->rects[i];
-		r.x0 = (det.rect.left() + x0) * p->tex->scale;
-		r.y0 = (det.rect.top() + y0) * p->tex->scale;
-		r.x1 = (det.rect.right() + x0) * p->tex->scale;
-		r.y1 = (det.rect.bottom() + y0) * p->tex->scale;
-		r.score = det.detection_confidence;
+	try {
+		auto dets = p->net(img);
+		p->rects.resize(dets.size());
+		for (size_t i = 0; i < dets.size(); i++) {
+			auto &det = dets[i];
+			rect_s &r = p->rects[i];
+			r.x0 = (det.rect.left() + x0) * p->tex->scale;
+			r.y0 = (det.rect.top() + y0) * p->tex->scale;
+			r.x1 = (det.rect.right() + x0) * p->tex->scale;
+			r.y1 = (det.rect.bottom() + y0) * p->tex->scale;
+			r.score = det.detection_confidence;
+		}
+	} catch (const std::exception &e) {
+		blog(LOG_ERROR, "Exception in CNN forward pass: %s", e.what());
+		p->rects.clear();
+	} catch (...) {
+		blog(LOG_ERROR, "Unknown exception in CNN forward pass");
+		p->rects.clear();
 	}
 
 	p->tex.reset();

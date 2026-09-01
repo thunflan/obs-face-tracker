@@ -364,39 +364,51 @@ static obs_properties_t *ftptz_properties(void *data)
 	obs_properties_t *props;
 	props = obs_properties_create();
 
-	obs_properties_add_button(props, "ftptz_reset_tracking", obs_module_text("Reset tracking"),
-				  ftptz_reset_tracking);
+	obs_property_t *p_btn = obs_properties_add_button(props, "ftptz_reset_tracking",
+							  obs_module_text("ResetTracking"), ftptz_reset_tracking);
+	obs_property_set_long_description(p_btn, obs_module_text("ResetTracking.Desc"));
 
 	{
 		obs_properties_t *pp = obs_properties_create();
 		obs_property_t *p = obs_properties_add_list(pp, "preset_name", obs_module_text("Preset"),
 							    OBS_COMBO_TYPE_EDITABLE, OBS_COMBO_FORMAT_STRING);
+		obs_property_set_long_description(p, obs_module_text("Preset.Desc"));
 		obs_data_t *settings = obs_source_get_settings(s->context);
 		if (settings) {
 			ftf_preset_item_to_list(p, settings);
 			obs_data_release(settings);
 		}
-		obs_properties_add_button(pp, "preset_load", obs_module_text("Load preset"), ftf_preset_load);
-		obs_properties_add_button(pp, "preset_save", obs_module_text("Save preset"), ftf_preset_save);
-		obs_properties_add_button(pp, "preset_delete", obs_module_text("Delete preset"), ftf_preset_delete);
-		obs_properties_add_bool(pp, "preset_mask_track", obs_module_text("Save and load tracking parameters"));
-		obs_properties_add_bool(pp, "preset_mask_control", obs_module_text("Save and load control parameters"));
+		obs_property_t *p_act;
+		p_act = obs_properties_add_button(pp, "preset_load", obs_module_text("LoadPreset"), ftf_preset_load);
+		obs_property_set_long_description(p_act, obs_module_text("LoadPreset.Desc"));
+		p_act = obs_properties_add_button(pp, "preset_save", obs_module_text("SavePreset"), ftf_preset_save);
+		obs_property_set_long_description(p_act, obs_module_text("SavePreset.Desc"));
+		p_act = obs_properties_add_button(pp, "preset_delete", obs_module_text("DeletePreset"),
+						  ftf_preset_delete);
+		obs_property_set_long_description(p_act, obs_module_text("DeletePreset.Desc"));
+		p_act = obs_properties_add_bool(pp, "preset_mask_track", obs_module_text("SaveTrackingParams"));
+		obs_property_set_long_description(p_act, obs_module_text("SaveTrackingParams.Desc"));
+		p_act = obs_properties_add_bool(pp, "preset_mask_control", obs_module_text("SaveControlParams"));
+		obs_property_set_long_description(p_act, obs_module_text("SaveControlParams.Desc"));
 		obs_properties_add_group(props, "preset_grp", obs_module_text("Preset"), OBS_GROUP_NORMAL, pp);
 	}
 
 	{
 		obs_properties_t *pp = obs_properties_create();
 		face_tracker_manager::get_properties(pp);
-		obs_properties_add_group(props, "ftm", obs_module_text("Face detection options"), OBS_GROUP_NORMAL, pp);
+		obs_properties_add_group(props, "ftm", obs_module_text("FaceDetectionOptions"), OBS_GROUP_NORMAL, pp);
 	}
 
 	{
 		obs_properties_t *pp = obs_properties_create();
-		obs_properties_add_float(pp, "track_z", obs_module_text("Zoom"), 0.1, 2.0, 0.05);
-		obs_properties_add_float(pp, "track_x", obs_module_text("X"), -1.0, +1.0, 0.05);
-		obs_properties_add_float(pp, "track_y", obs_module_text("Y"), -1.0, +1.0, 0.05);
-		obs_properties_add_group(props, "track", obs_module_text("Tracking target location"), OBS_GROUP_NORMAL,
-					 pp);
+		obs_property_t *p;
+		p = obs_properties_add_float(pp, "track_z", obs_module_text("Zoom"), 0.1, 2.0, 0.05);
+		obs_property_set_long_description(p, obs_module_text("Zoom.Desc"));
+		p = obs_properties_add_float(pp, "track_x", obs_module_text("PosX"), -1.0, +1.0, 0.05);
+		obs_property_set_long_description(p, obs_module_text("PosX.Desc"));
+		p = obs_properties_add_float(pp, "track_y", obs_module_text("PosY"), -1.0, +1.0, 0.05);
+		obs_property_set_long_description(p, obs_module_text("PosY.Desc"));
+		obs_properties_add_group(props, "track", obs_module_text("TrackingTarget"), OBS_GROUP_NORMAL, pp);
 	}
 
 	{
@@ -404,26 +416,43 @@ static obs_properties_t *ftptz_properties(void *data)
 		obs_property_t *p;
 		p = obs_properties_add_float(pp, "Kp_x_db", "Track Kp (X)", -40.0, +80.0, 1.0);
 		obs_property_float_set_suffix(p, " dB");
+		obs_property_set_long_description(p, obs_module_text("TrackKp.Desc"));
 		p = obs_properties_add_float(pp, "Kp_y_db", "Track Kp (Y)", -40.0, +80.0, 1.0);
 		obs_property_float_set_suffix(p, " dB");
+		obs_property_set_long_description(p, obs_module_text("TrackKp.Desc"));
 		p = obs_properties_add_float(pp, "Kp_z_db", "Track Kp (Z)", -40.0, +60.0, 1.0);
 		obs_property_float_set_suffix(p, " dB");
-		obs_properties_add_float(pp, "Ki_x", "Track Ki (X)", 0.0, 5.0, 0.01);
-		obs_properties_add_float(pp, "Ki_y", "Track Ki (Y)", 0.0, 5.0, 0.01);
-		obs_properties_add_float(pp, "Ki_z", "Track Ki (Z)", 0.0, 5.0, 0.01);
-		obs_properties_add_float(pp, "Td_x", "Track Td (X)", 0.0, 5.0, 0.01);
-		obs_properties_add_float(pp, "Td_y", "Track Td (Y)", 0.0, 5.0, 0.01);
-		obs_properties_add_float(pp, "Td_z", "Track Td (Z)", 0.0, 5.0, 0.01);
-		obs_properties_add_float(pp, "Tdlpf", "Track LPF for Td (X, Y)", 0.0, 10.0, 0.1);
-		obs_properties_add_float(pp, "Tdlpf_z", "Track LPF for Td (Z)", 0.0, 10.0, 0.1);
-		obs_properties_add_float(pp, "e_deadband_x", "Dead band (X)", 0.0, 50, 0.1);
-		obs_properties_add_float(pp, "e_deadband_y", "Dead band (Y)", 0.0, 50, 0.1);
-		obs_properties_add_float(pp, "e_deadband_z", "Dead band (Z)", 0.0, 50, 0.1);
-		obs_properties_add_float(pp, "e_nonlinear_x", "Nonlinear band (X)", 0.0, 50, 0.1);
-		obs_properties_add_float(pp, "e_nonlinear_y", "Nonlinear band (Y)", 0.0, 50, 0.1);
-		obs_properties_add_float(pp, "e_nonlinear_z", "Nonlinear band (Z)", 0.0, 50, 0.1);
-		obs_properties_add_float(pp, "Tatt_int", "Attenuation time for lost face", 0.0, 4.0, 0.5);
-		obs_properties_add_group(props, "ctrl", obs_module_text("Tracking response"), OBS_GROUP_NORMAL, pp);
+		obs_property_set_long_description(p, obs_module_text("TrackKp.Desc"));
+		p = obs_properties_add_float(pp, "Ki_x", "Track Ki (X)", 0.0, 5.0, 0.01);
+		obs_property_set_long_description(p, obs_module_text("TrackKi.Desc"));
+		p = obs_properties_add_float(pp, "Ki_y", "Track Ki (Y)", 0.0, 5.0, 0.01);
+		obs_property_set_long_description(p, obs_module_text("TrackKi.Desc"));
+		p = obs_properties_add_float(pp, "Ki_z", "Track Ki (Z)", 0.0, 5.0, 0.01);
+		obs_property_set_long_description(p, obs_module_text("TrackKi.Desc"));
+		p = obs_properties_add_float(pp, "Td_x", "Track Td (X)", 0.0, 5.0, 0.01);
+		obs_property_set_long_description(p, obs_module_text("TrackTd.Desc"));
+		p = obs_properties_add_float(pp, "Td_y", "Track Td (Y)", 0.0, 5.0, 0.01);
+		obs_property_set_long_description(p, obs_module_text("TrackTd.Desc"));
+		p = obs_properties_add_float(pp, "Td_z", "Track Td (Z)", 0.0, 5.0, 0.01);
+		obs_property_set_long_description(p, obs_module_text("TrackTd.Desc"));
+		p = obs_properties_add_float(pp, "Tdlpf", "Track LPF for Td (X, Y)", 0.0, 10.0, 0.1);
+		obs_property_set_long_description(p, obs_module_text("TrackLPF.Desc"));
+		p = obs_properties_add_float(pp, "Tdlpf_z", "Track LPF for Td (Z)", 0.0, 10.0, 0.1);
+		obs_property_set_long_description(p, obs_module_text("TrackLPFZ.Desc"));
+		p = obs_properties_add_float(pp, "e_deadband_x", "Dead band (X)", 0.0, 50, 0.1);
+		obs_property_set_long_description(p, obs_module_text("Deadband.Desc"));
+		p = obs_properties_add_float(pp, "e_deadband_y", "Dead band (Y)", 0.0, 50, 0.1);
+		obs_property_set_long_description(p, obs_module_text("Deadband.Desc"));
+		p = obs_properties_add_float(pp, "e_deadband_z", "Dead band (Z)", 0.0, 50, 0.1);
+		obs_property_set_long_description(p, obs_module_text("Deadband.Desc"));
+		p = obs_properties_add_float(pp, "e_nonlinear_x", "Nonlinear band (X)", 0.0, 50, 0.1);
+		obs_property_set_long_description(p, obs_module_text("NonlinearBand.Desc"));
+		p = obs_properties_add_float(pp, "e_nonlinear_y", "Nonlinear band (Y)", 0.0, 50, 0.1);
+		obs_property_set_long_description(p, obs_module_text("NonlinearBand.Desc"));
+		p = obs_properties_add_float(pp, "e_nonlinear_z", "Nonlinear band (Z)", 0.0, 50, 0.1);
+		obs_property_set_long_description(p, obs_module_text("NonlinearBand.Desc"));
+		p = obs_properties_add_float(pp, "Tatt_int", "Attenuation time for lost face", 0.0, 4.0, 0.5);
+		obs_properties_add_group(props, "ctrl", obs_module_text("TrackingResponse"), OBS_GROUP_NORMAL, pp);
 	}
 
 	{
