@@ -340,8 +340,11 @@ jobs:
         shell: pwsh
         run: |
           Invoke-WebRequest -Uri "https://github.com/glikely/obs-ptz/releases/download/v0.19.1/obs-ptz-0.19.1-windows-x64.zip" -OutFile "obs-ptz.zip"
-          7z x obs-ptz.zip -o"$(Resolve-Path -Path .)/release" -y
-          Remove-Item obs-ptz.zip
+          7z x obs-ptz.zip -o"temp-obs-ptz" -y
+          Copy-Item "temp-obs-ptz\obs-ptz\bin\64bit\*" "release\obs-plugins\64bit\" -Force
+          New-Item -ItemType Directory -Path "release\data\obs-plugins\obs-ptz" -Force | Out-Null
+          Copy-Item "temp-obs-ptz\obs-ptz\data\*" "release\data\obs-plugins\obs-ptz\" -Force -Recurse
+          Remove-Item obs-ptz.zip, temp-obs-ptz -Recurse -Force
 
       - name: Package plugin
         run: ci/windows/package-windows.cmd ${{ matrix.obs }}
