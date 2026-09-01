@@ -1029,23 +1029,17 @@ static void ftptz_tick(void *data, float second)
 	// 1. Atualiza e processa controle por Gamepad (Xbox / PS5 / Wireless Controller)
 	GamepadState gp_state = GamepadController::get_instance().get_last_state();
 	if (GamepadController::get_instance().is_enabled() && gp_state.manual_active) {
-		float target_pan = gp_state.pan_axis * 24.0f;
-		float target_tilt = gp_state.tilt_axis * 20.0f;
-		float target_zoom = gp_state.zoom_axis * 7.0f;
-
-		float r_pan, r_tilt, r_zoom;
-		s->ramp.process(target_pan, target_tilt, target_zoom, second, r_pan, r_tilt, r_zoom);
-		s->u_linear[0] = r_pan;
-		s->u_linear[1] = r_tilt;
-		s->u_linear[2] = r_zoom;
-		s->u[0] = (int)std::round(r_pan);
-		s->u[1] = (int)std::round(r_tilt);
-		s->u[2] = (int)std::round(r_zoom);
-
+		// Modo Manual do Gamepad ativo: o GamepadController despacha os movimentos diretamente
+		// para a câmera selecionada no PTZ Controls. O filtro facial pausa o tracking para não conflitar.
 		s->face_found = false;
 		s->detect_err = f3(0, 0, 0);
-
-		send_ptz_cmd_immediate(s);
+		s->u_linear[0] = 0.0f;
+		s->u_linear[1] = 0.0f;
+		s->u_linear[2] = 0.0f;
+		s->u[0] = 0;
+		s->u[1] = 0;
+		s->u[2] = 0;
+		s->last_ptz_cmd_sent_ns = obs_get_video_frame_time();
 
 		if (s->ftm && s->ftm->dev) {
 			s->ftm->dev->tick();

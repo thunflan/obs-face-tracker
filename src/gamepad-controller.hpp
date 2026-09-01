@@ -121,6 +121,7 @@ public:
 	float get_zoom_speed_mult() const { return zoom_speed_mult; }
 
 	int get_obsptz_active_device_id();
+	std::string get_obsptz_active_device_name();
 	void set_active_camera(int cam) { active_camera = cam; }
 	int get_active_camera() const { return active_camera; }
 

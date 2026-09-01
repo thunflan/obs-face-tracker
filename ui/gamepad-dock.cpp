@@ -561,8 +561,11 @@ void GamepadDock::onTimerUpdate()
 	triggerRightBar->setFormat(QString("Zoom (Stick Direito): %1%").arg(zoom_pct));
 
 	int active_cam = GamepadController::get_instance().get_obsptz_active_device_id();
+	std::string active_name = GamepadController::get_instance().get_obsptz_active_device_name();
 	if (cameraStatusLabel) {
-		cameraStatusLabel->setText(QString("🎥 PTZ: Câmera %1 (Auto PTZ Controls)").arg(active_cam));
+		cameraStatusLabel->setText(QString("🎥 PTZ: %1 (ID: %2)")
+						.arg(QString::fromUtf8(active_name.c_str()))
+						.arg(active_cam));
 	}
 
 	// Atualiza Badges dos Botões

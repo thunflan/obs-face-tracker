@@ -4,7 +4,16 @@
 #include <obs.h>
 #include <cmath>
 #include <algorithm>
+#include <vector>
+#include <string>
 #include <SDL.h>
+
+#include <QApplication>
+#include <QMainWindow>
+#include <QAbstractItemView>
+#include <QItemSelectionModel>
+#include <QModelIndex>
+#include <QVariant>
 
 static bool s_sdl_initialized = false;
 static SDL_GameController *s_current_controller = nullptr;
@@ -91,44 +100,156 @@ static inline float apply_progressive_curve(float raw, float deadzone, float cur
 	return (raw < 0.0f) ? -spd : spd;
 }
 
-int GamepadController::get_obsptz_active_device_id()
-{
-	static int cached_id = 1;
-	static uint64_t last_check_ns = 0;
-	uint64_t now_ns = os_gettime_ns();
+struct ObsPtzDeviceMap {
+	int id;
+	std::string name;
+};
 
-	// Verifica o arquivo de configuração do obs-ptz a cada 200ms para seguir a seleção ativa do PTZ Controls
-	if (now_ns - last_check_ns > 200000000ULL) {
-		last_check_ns = now_ns;
-		const char *appdata = getenv("APPDATA");
-		if (appdata) {
-			std::string cfg_path = std::string(appdata) + "\\obs-studio\\plugin_config\\obs-ptz\\config.json";
-			FILE *fp = os_fopen(cfg_path.c_str(), "rb");
-			if (fp) {
-				fseek(fp, 0, SEEK_END);
-				long len = ftell(fp);
-				fseek(fp, 0, SEEK_SET);
-				if (len > 0 && len < 65536) {
-					std::string content(len, '\0');
-					size_t read_bytes = fread(&content[0], 1, len, fp);
-					if (read_bytes == (size_t)len) {
-						size_t pos = content.find("\"current_selected\"");
-						if (pos != std::string::npos) {
-							size_t colon = content.find(':', pos);
-							if (colon != std::string::npos) {
-								int id = std::atoi(content.c_str() + colon + 1);
-								if (id >= 0) {
-									cached_id = id;
-								}
-							}
+static std::vector<ObsPtzDeviceMap> load_obsptz_devices_from_config()
+{
+	std::vector<ObsPtzDeviceMap> list;
+	const char *appdata = getenv("APPDATA");
+	if (!appdata) return list;
+
+	std::string cfg_path = std::string(appdata) + "\\obs-studio\\plugin_config\\obs-ptz\\config.json";
+	FILE *fp = os_fopen(cfg_path.c_str(), "rb");
+	if (!fp) return list;
+
+	fseek(fp, 0, SEEK_END);
+	long len = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+	if (len <= 0 || len > 131072) {
+		fclose(fp);
+		return list;
+	}
+
+	std::string content(len, '\0');
+	size_t r = fread(&content[0], 1, len, fp);
+	fclose(fp);
+	if (r != (size_t)len) return list;
+
+	size_t dev_pos = content.find("\"devices\"");
+	if (dev_pos == std::string::npos) return list;
+
+	size_t cur = dev_pos;
+	while (true) {
+		size_t obj_start = content.find('{', cur);
+		if (obj_start == std::string::npos) break;
+		size_t obj_end = content.find('}', obj_start);
+		if (obj_end == std::string::npos) break;
+
+		std::string obj = content.substr(obj_start, obj_end - obj_start + 1);
+		size_t id_pos = obj.find("\"id\"");
+		if (id_pos != std::string::npos) {
+			size_t col = obj.find(':', id_pos);
+			if (col != std::string::npos) {
+				int dev_id = std::atoi(obj.c_str() + col + 1);
+				std::string dev_name = "Câmera " + std::to_string(dev_id);
+				size_t name_pos = obj.find("\"name\"");
+				if (name_pos != std::string::npos) {
+					size_t q1 = obj.find('"', name_pos + 6);
+					if (q1 != std::string::npos) {
+						size_t q2 = obj.find('"', q1 + 1);
+						if (q2 != std::string::npos) {
+							dev_name = obj.substr(q1 + 1, q2 - q1 - 1);
 						}
 					}
 				}
-				fclose(fp);
+				list.push_back({dev_id, dev_name});
+			}
+		}
+		cur = obj_end + 1;
+	}
+	return list;
+}
+
+static int s_active_ptz_id = 1;
+static std::string s_active_ptz_name = "Câmera 1";
+
+int GamepadController::get_obsptz_active_device_id()
+{
+	static uint64_t last_ui_check_ns = 0;
+	uint64_t now_ns = os_gettime_ns();
+
+	// Verifica a UI do Qt a cada 30ms (resposta em tempo real ao clique do usuário)
+	if (now_ns - last_ui_check_ns > 30000000ULL) {
+		last_ui_check_ns = now_ns;
+
+		QMainWindow *main_win = (QMainWindow *)obs_frontend_get_main_window();
+		QAbstractItemView *camView = nullptr;
+		if (main_win) {
+			camView = main_win->findChild<QAbstractItemView *>("cameraList");
+		}
+		if (!camView && qApp) {
+			const auto widgets = qApp->allWidgets();
+			for (QWidget *w : widgets) {
+				if (w && w->objectName() == "cameraList") {
+					camView = qobject_cast<QAbstractItemView *>(w);
+					if (camView) break;
+				}
+			}
+		}
+
+		if (camView && camView->model()) {
+			QModelIndex curr = camView->currentIndex();
+			if (!curr.isValid() && camView->selectionModel()) {
+				auto sel = camView->selectionModel()->selectedIndexes();
+				if (!sel.isEmpty())
+					curr = sel.first();
+			}
+
+			if (curr.isValid()) {
+				int row = curr.row();
+				QString itemText = camView->model()->data(curr, Qt::DisplayRole).toString();
+
+				static std::vector<ObsPtzDeviceMap> s_devs = load_obsptz_devices_from_config();
+				static uint64_t last_file_load = 0;
+				if (now_ns - last_file_load > 2000000000ULL) { // recarrega lista do config a cada 2s
+					last_file_load = now_ns;
+					s_devs = load_obsptz_devices_from_config();
+				}
+
+				bool found = false;
+				// 1. Tenta casar pelo nome da câmera exibida na lista
+				if (!itemText.isEmpty()) {
+					for (const auto &d : s_devs) {
+						if (QString::fromUtf8(d.name.c_str()) == itemText) {
+							s_active_ptz_id = d.id;
+							s_active_ptz_name = d.name;
+							found = true;
+							break;
+						}
+					}
+				}
+
+				// 2. Tenta casar pelo índice da linha (row)
+				if (!found && row >= 0 && row < (int)s_devs.size()) {
+					s_active_ptz_id = s_devs[row].id;
+					s_active_ptz_name = s_devs[row].name;
+					found = true;
+				}
+
+				// 3. Fallback: UserRole se o modelo do PTZ armazenar o ID diretamente
+				if (!found) {
+					QVariant v = camView->model()->data(curr, Qt::UserRole);
+					if (v.isValid() && v.toInt() > 0) {
+						s_active_ptz_id = v.toInt();
+						s_active_ptz_name = itemText.toUtf8().constData();
+					} else {
+						s_active_ptz_id = row + 1;
+						s_active_ptz_name = "Câmera " + std::to_string(s_active_ptz_id);
+					}
+				}
 			}
 		}
 	}
-	return cached_id;
+	return s_active_ptz_id;
+}
+
+std::string GamepadController::get_obsptz_active_device_name()
+{
+	get_obsptz_active_device_id();
+	return s_active_ptz_name;
 }
 
 static void switch_scene_by_name(const std::string &scene_name, bool preview_only)
@@ -563,7 +684,14 @@ bool GamepadController::tick(float dt, GamepadState &state)
 		preset_to_call = is_rt_held ? 12 : (is_rb_held ? 8 : 4);
 	}
 
+	static int s_prev_target_camera = 1;
 	int target_camera = get_obsptz_active_device_id();
+	if (target_camera != s_prev_target_camera) {
+		send_ptz_stop(s_prev_target_camera);
+		s_prev_target_camera = target_camera;
+		blog(LOG_INFO, "[Gamepad PTZ] Câmera selecionada alternada para ID %d (%s)",
+		     target_camera, get_obsptz_active_device_name().c_str());
+	}
 
 	if (preset_to_call > 0) {
 		recall_ptz_preset(target_camera, preset_to_call);
