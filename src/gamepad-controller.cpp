@@ -404,9 +404,8 @@ bool GamepadController::tick(float dt, GamepadState &state)
 	}
 
 	// 2. CORTE E TRANSIÇÃO
-	if (scene_config.cut_on_lb && (pressed_buttons & (1 << 4))) { // LB
+	if (scene_config.cut_on_lb && (pressed_buttons & (1 << 4))) { // LB (Corte Seco)
 		if (obs_frontend_get_main_window()) {
-			obs_frontend_take_screenshot();
 			obs_source_t *prev = obs_frontend_get_current_preview_scene();
 			if (prev) {
 				obs_frontend_set_current_scene(prev);
@@ -415,9 +414,17 @@ bool GamepadController::tick(float dt, GamepadState &state)
 		}
 	}
 
-	if (scene_config.trans_on_lt && (lt_pressed || (pressed_buttons & (1 << 4)))) { // LT
+	if (scene_config.trans_on_lt && lt_pressed) { // LT (Transição)
 		if (obs_frontend_get_main_window()) {
-			obs_frontend_studio_mode_transition();
+			if (obs_frontend_preview_program_mode_active()) {
+				obs_frontend_preview_program_trigger_transition();
+			} else {
+				obs_source_t *prev = obs_frontend_get_current_preview_scene();
+				if (prev) {
+					obs_frontend_set_current_scene(prev);
+					obs_source_release(prev);
+				}
+			}
 		}
 	}
 
