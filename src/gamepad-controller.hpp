@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include <vector>
 #include <functional>
 
 struct GamepadState {
@@ -52,9 +53,9 @@ struct GamepadSceneConfig {
 };
 
 struct ControllerDeviceInfo {
-	std::string id;        // "auto", "xinput_0", "dinput_0", etc.
-	std::string name;      // Nome amigável para exibição no Dropdown
-	bool is_xinput;
+	std::string id;        // "auto", "sdl_0", "sdl_1", etc.
+	std::string name;      // Nome do controle tal como o Windows usa (ex: "Wireless Controller")
+	bool is_gamecontroller;
 	int index;
 };
 
@@ -83,9 +84,6 @@ private:
 
 	GamepadSceneConfig scene_config;
 	GamepadState last_state;
-
-	void *xinput_dll;
-	void *p_xinput_get_state;
 
 	std::string selected_device_id;
 	std::string active_device_name;
@@ -132,4 +130,3 @@ public:
 	bool is_manual() const { return is_manual_override; }
 	void set_manual(bool manual) { is_manual_override = manual; }
 };
-

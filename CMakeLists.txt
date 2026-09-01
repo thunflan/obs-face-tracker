@@ -140,7 +140,13 @@ if(OS_WINDOWS)
 		add_definitions("-D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR") # TODO: Remove once requiring OBS 30.2 or later.
 	endif()
 
-	target_link_libraries(${CMAKE_PROJECT_NAME} OBS::w32-pthreads dinput8 dxguid)
+	target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+		${CMAKE_CURRENT_SOURCE_DIR}/deps/SDL2/include
+	)
+	target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
+		${CMAKE_CURRENT_SOURCE_DIR}/deps/SDL2/lib/x64
+	)
+	target_link_libraries(${CMAKE_PROJECT_NAME} OBS::w32-pthreads SDL2)
 endif()
 
 if(OS_LINUX)

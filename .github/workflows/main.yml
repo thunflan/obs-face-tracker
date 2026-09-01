@@ -326,6 +326,14 @@ jobs:
           cp dlib/LICENSE.txt data/LICENSE-dlib
           cp dlib-models/LICENSE data/LICENSE-dlib-models
 
+      - name: Download SDL2
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/libsdl-org/SDL/releases/download/release-2.30.12/SDL2-devel-2.30.12-VC.zip" -OutFile "SDL2.zip"
+          7z x SDL2.zip -o"deps" -y
+          Rename-Item "deps\SDL2-2.30.12" "SDL2"
+          Remove-Item SDL2.zip -Force
+
       - name: Build plugin
         run: |
           $CmakeArgs = @(
@@ -336,9 +344,10 @@ jobs:
           cmake --build build --config RelWithDebInfo -j 4
           cmake --install build --config RelWithDebInfo --prefix "$(Resolve-Path -Path .)/release"
 
-      - name: Embed obs-ptz plugin
+      - name: Embed obs-ptz and SDL2
         shell: pwsh
         run: |
+          Copy-Item "deps\SDL2\lib\x64\SDL2.dll" "release\obs-plugins\64bit\" -Force
           Invoke-WebRequest -Uri "https://github.com/glikely/obs-ptz/releases/download/v0.19.1/obs-ptz-0.19.1-windows-x64.zip" -OutFile "obs-ptz.zip"
           7z x obs-ptz.zip -o"temp-obs-ptz" -y
           Copy-Item "temp-obs-ptz\obs-ptz\bin\64bit\*" "release\obs-plugins\64bit\" -Force
