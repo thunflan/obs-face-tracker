@@ -40,6 +40,12 @@ struct f3
 {
 	float v[3];
 
+	f3()
+	{
+		v[0] = 0.0f;
+		v[1] = 0.0f;
+		v[2] = 0.0f;
+	}
 	f3(const f3 &a) { *this = a; }
 	f3(float a, float b, float c)
 	{
