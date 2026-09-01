@@ -28,8 +28,10 @@ GamepadController::GamepadController()
 	  prev_buttons(0),
 	  prev_lt(0.0f),
 	  prev_rt(0.0f),
-	  xinput_dll(nullptr),
-	  p_xinput_get_state(nullptr)
+	  	xinput_dll(nullptr),
+	p_xinput_get_state(nullptr),
+	winmm_dll(nullptr),
+	p_joy_get_pos_ex(nullptr)
 {
 	scene_config.cut_on_lb = true;
 	scene_config.trans_on_lt = true;
@@ -47,6 +49,12 @@ GamepadController::GamepadController()
 		xinput_dll = (void *)mod;
 		p_xinput_get_state = (void *)GetProcAddress(mod, "XInputGetState");
 	}
+
+	HMODULE wmod = LoadLibraryW(L"winmm.dll");
+	if (wmod) {
+		winmm_dll = (void *)wmod;
+		p_joy_get_pos_ex = (void *)GetProcAddress(wmod, "joyGetPosEx");
+	}
 #endif
 }
 
@@ -57,6 +65,11 @@ GamepadController::~GamepadController()
 		FreeLibrary((HMODULE)xinput_dll);
 		xinput_dll = nullptr;
 		p_xinput_get_state = nullptr;
+	}
+	if (winmm_dll) {
+		FreeLibrary((HMODULE)winmm_dll);
+		winmm_dll = nullptr;
+		p_joy_get_pos_ex = nullptr;
 	}
 #endif
 }
@@ -104,68 +117,143 @@ bool GamepadController::poll_state(GamepadState &state)
 	state.manual_active = is_manual_override;
 
 #ifdef _WIN32
-	if (!p_xinput_get_state)
-		return false;
+	// 1. TENTA PRIMEIRO VIA XINPUT (Xbox padrão)
+	if (p_xinput_get_state) {
+		PFN_XInputGetState fnGetState = (PFN_XInputGetState)p_xinput_get_state;
+		XINPUT_STATE xstate;
+		ZeroMemory(&xstate, sizeof(XINPUT_STATE));
 
-	PFN_XInputGetState fnGetState = (PFN_XInputGetState)p_xinput_get_state;
-	XINPUT_STATE xstate;
-	ZeroMemory(&xstate, sizeof(XINPUT_STATE));
+		for (DWORD i = 0; i < 4; i++) {
+			if (fnGetState(i, &xstate) == ERROR_SUCCESS) {
+				state.connected = true;
 
-	DWORD res = ERROR_DEVICE_NOT_CONNECTED;
-	for (DWORD i = 0; i < 4; i++) {
-		res = fnGetState(i, &xstate);
-		if (res == ERROR_SUCCESS)
-			break;
+				float raw_lx = (float)xstate.Gamepad.sThumbLX / 32767.0f;
+				float raw_ly = (float)xstate.Gamepad.sThumbLY / 32767.0f;
+				raw_lx = std::clamp(raw_lx, -1.0f, 1.0f);
+				raw_ly = std::clamp(raw_ly, -1.0f, 1.0f);
+
+				state.pan_axis = apply_axis_curve(raw_lx, deadzone) * sensitivity;
+				state.tilt_axis = apply_axis_curve(raw_ly, deadzone) * sensitivity;
+
+				state.trigger_left = (float)xstate.Gamepad.bLeftTrigger / 255.0f;
+				state.trigger_right = (float)xstate.Gamepad.bRightTrigger / 255.0f;
+
+				float zoom = 0.0f;
+				if (state.trigger_right > 0.05f)
+					zoom += (state.trigger_right - 0.05f) / 0.95f;
+				if (state.trigger_left > 0.05f)
+					zoom -= (state.trigger_left - 0.05f) / 0.95f;
+				state.zoom_axis = std::clamp(zoom * sensitivity, -1.0f, 1.0f);
+
+				uint32_t b = xstate.Gamepad.wButtons;
+				state.buttons = b;
+				state.btn_a = (b & XINPUT_GAMEPAD_A) != 0;
+				state.btn_b = (b & XINPUT_GAMEPAD_B) != 0;
+				state.btn_x = (b & XINPUT_GAMEPAD_X) != 0;
+				state.btn_y = (b & XINPUT_GAMEPAD_Y) != 0;
+				state.btn_lb = (b & XINPUT_GAMEPAD_LEFT_SHOULDER) != 0;
+				state.btn_rb = (b & XINPUT_GAMEPAD_RIGHT_SHOULDER) != 0;
+				state.btn_lt = (state.trigger_left > 0.35f);
+				state.btn_rt = (state.trigger_right > 0.35f);
+				state.dpad_up = (b & XINPUT_GAMEPAD_DPAD_UP) != 0;
+				state.dpad_down = (b & XINPUT_GAMEPAD_DPAD_DOWN) != 0;
+				state.dpad_left = (b & XINPUT_GAMEPAD_DPAD_LEFT) != 0;
+				state.dpad_right = (b & XINPUT_GAMEPAD_DPAD_RIGHT) != 0;
+				state.btn_start = (b & XINPUT_GAMEPAD_START) != 0;
+				state.btn_back = (b & XINPUT_GAMEPAD_BACK) != 0;
+				state.btn_thumb_l = (b & XINPUT_GAMEPAD_LEFT_THUMB) != 0;
+				state.btn_thumb_r = (b & XINPUT_GAMEPAD_RIGHT_THUMB) != 0;
+
+				last_state = state;
+				return true;
+			}
+		}
 	}
 
-	if (res != ERROR_SUCCESS) {
-		state.connected = false;
-		last_state = state;
-		return false;
+	// 2. SE NÃO HOUVER XINPUT, TENTA VIA WINMM / DIRECTINPUT (GameSir Nova Lite, Bluetooth Wireless Controller, PS4/PS5, Switch)
+	if (p_joy_get_pos_ex) {
+		typedef UINT(WINAPI * PFN_joyGetPosEx)(UINT uJoyID, LPJOYINFOEX pji);
+		PFN_joyGetPosEx fnJoy = (PFN_joyGetPosEx)p_joy_get_pos_ex;
+		JOYINFOEX jie;
+		jie.dwSize = sizeof(JOYINFOEX);
+		jie.dwFlags = JOY_RETURNALL;
+
+		for (UINT i = 0; i < 16; i++) {
+			if (fnJoy(i, &jie) == 0) { // JOYERR_NOERROR
+				state.connected = true;
+
+				float raw_lx = ((float)jie.dwXpos - 32767.5f) / 32767.5f;
+				float raw_ly = -((float)jie.dwYpos - 32767.5f) / 32767.5f;
+				raw_lx = std::clamp(raw_lx, -1.0f, 1.0f);
+				raw_ly = std::clamp(raw_ly, -1.0f, 1.0f);
+
+				state.pan_axis = apply_axis_curve(raw_lx, deadzone) * sensitivity;
+				state.tilt_axis = apply_axis_curve(raw_ly, deadzone) * sensitivity;
+
+				// Gatilhos e Botões
+				state.btn_a = (jie.dwButtons & (1 << 0)) != 0;
+				state.btn_b = (jie.dwButtons & (1 << 1)) != 0;
+				state.btn_x = (jie.dwButtons & (1 << 2)) != 0 || (jie.dwButtons & (1 << 3)) != 0;
+				state.btn_y = (jie.dwButtons & (1 << 3)) != 0 || (jie.dwButtons & (1 << 4)) != 0;
+				state.btn_lb = (jie.dwButtons & (1 << 4)) != 0;
+				state.btn_rb = (jie.dwButtons & (1 << 5)) != 0;
+				state.btn_lt = (jie.dwButtons & (1 << 6)) != 0;
+				state.btn_rt = (jie.dwButtons & (1 << 7)) != 0;
+				state.btn_back = (jie.dwButtons & (1 << 8)) != 0;
+				state.btn_start = (jie.dwButtons & (1 << 9)) != 0;
+				state.btn_thumb_l = (jie.dwButtons & (1 << 10)) != 0;
+				state.btn_thumb_r = (jie.dwButtons & (1 << 11)) != 0;
+
+				state.trigger_left = state.btn_lt ? 1.0f : 0.0f;
+				state.trigger_right = state.btn_rt ? 1.0f : 0.0f;
+
+				float zoom = 0.0f;
+				if (state.btn_rt)
+					zoom += 1.0f;
+				if (state.btn_lt)
+					zoom -= 1.0f;
+				state.zoom_axis = std::clamp(zoom * sensitivity, -1.0f, 1.0f);
+
+				// D-Pad via POV
+				if (jie.dwPOV != 65535) {
+					if (jie.dwPOV >= 31500 || jie.dwPOV <= 4500)
+						state.dpad_up = true;
+					if (jie.dwPOV >= 4500 && jie.dwPOV <= 13500)
+						state.dpad_right = true;
+					if (jie.dwPOV >= 13500 && jie.dwPOV <= 22500)
+						state.dpad_down = true;
+					if (jie.dwPOV >= 22500 && jie.dwPOV <= 31500)
+						state.dpad_left = true;
+				}
+
+				uint32_t b = 0;
+				if (state.btn_a) b |= XINPUT_GAMEPAD_A;
+				if (state.btn_b) b |= XINPUT_GAMEPAD_B;
+				if (state.btn_x) b |= XINPUT_GAMEPAD_X;
+				if (state.btn_y) b |= XINPUT_GAMEPAD_Y;
+				if (state.btn_lb) b |= XINPUT_GAMEPAD_LEFT_SHOULDER;
+				if (state.btn_rb) b |= XINPUT_GAMEPAD_RIGHT_SHOULDER;
+				if (state.btn_start) b |= XINPUT_GAMEPAD_START;
+				if (state.btn_back) b |= XINPUT_GAMEPAD_BACK;
+				if (state.btn_thumb_l) b |= XINPUT_GAMEPAD_LEFT_THUMB;
+				if (state.btn_thumb_r) b |= XINPUT_GAMEPAD_RIGHT_THUMB;
+				if (state.dpad_up) b |= XINPUT_GAMEPAD_DPAD_UP;
+				if (state.dpad_down) b |= XINPUT_GAMEPAD_DPAD_DOWN;
+				if (state.dpad_left) b |= XINPUT_GAMEPAD_DPAD_LEFT;
+				if (state.dpad_right) b |= XINPUT_GAMEPAD_DPAD_RIGHT;
+				state.buttons = b;
+
+				last_state = state;
+				return true;
+			}
+		}
 	}
 
-	state.connected = true;
-
-	float raw_lx = (float)xstate.Gamepad.sThumbLX / 32767.0f;
-	float raw_ly = (float)xstate.Gamepad.sThumbLY / 32767.0f;
-	raw_lx = std::clamp(raw_lx, -1.0f, 1.0f);
-	raw_ly = std::clamp(raw_ly, -1.0f, 1.0f);
-
-	state.pan_axis = apply_axis_curve(raw_lx, deadzone) * sensitivity;
-	state.tilt_axis = apply_axis_curve(raw_ly, deadzone) * sensitivity;
-
-	state.trigger_left = (float)xstate.Gamepad.bLeftTrigger / 255.0f;
-	state.trigger_right = (float)xstate.Gamepad.bRightTrigger / 255.0f;
-
-	float zoom = 0.0f;
-	if (state.trigger_right > 0.05f)
-		zoom += (state.trigger_right - 0.05f) / 0.95f;
-	if (state.trigger_left > 0.05f)
-		zoom -= (state.trigger_left - 0.05f) / 0.95f;
-	state.zoom_axis = std::clamp(zoom * sensitivity, -1.0f, 1.0f);
-
-	uint32_t b = xstate.Gamepad.wButtons;
-	state.buttons = b;
-	state.btn_a = (b & XINPUT_GAMEPAD_A) != 0;
-	state.btn_b = (b & XINPUT_GAMEPAD_B) != 0;
-	state.btn_x = (b & XINPUT_GAMEPAD_X) != 0;
-	state.btn_y = (b & XINPUT_GAMEPAD_Y) != 0;
-	state.btn_lb = (b & XINPUT_GAMEPAD_LEFT_SHOULDER) != 0;
-	state.btn_rb = (b & XINPUT_GAMEPAD_RIGHT_SHOULDER) != 0;
-	state.btn_lt = (state.trigger_left > 0.35f);
-	state.btn_rt = (state.trigger_right > 0.35f);
-	state.dpad_up = (b & XINPUT_GAMEPAD_DPAD_UP) != 0;
-	state.dpad_down = (b & XINPUT_GAMEPAD_DPAD_DOWN) != 0;
-	state.dpad_left = (b & XINPUT_GAMEPAD_DPAD_LEFT) != 0;
-	state.dpad_right = (b & XINPUT_GAMEPAD_DPAD_RIGHT) != 0;
-	state.btn_start = (b & XINPUT_GAMEPAD_START) != 0;
-	state.btn_back = (b & XINPUT_GAMEPAD_BACK) != 0;
-	state.btn_thumb_l = (b & XINPUT_GAMEPAD_LEFT_THUMB) != 0;
-	state.btn_thumb_r = (b & XINPUT_GAMEPAD_RIGHT_THUMB) != 0;
-
+	state.connected = false;
 	last_state = state;
-	return true;
+	return false;
 #else
+	state.connected = false;
 	return false;
 #endif
 }

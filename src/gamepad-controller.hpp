@@ -76,6 +76,8 @@ private:
 
 	void *xinput_dll;
 	void *p_xinput_get_state;
+	void *winmm_dll;
+	void *p_joy_get_pos_ex;
 
 public:
 	GamepadController();
