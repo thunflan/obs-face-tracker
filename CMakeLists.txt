@@ -104,6 +104,7 @@ if (WITH_DOCK)
 		${PLUGIN_SOURCES}
 		ui/face-tracker-dock.cpp
 		ui/face-tracker-widget.cpp
+		ui/gamepad-dock.cpp
 	)
 endif()
 
