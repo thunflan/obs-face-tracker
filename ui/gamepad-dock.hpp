@@ -29,10 +29,13 @@ private slots:
 	void onTimerUpdate();
 	void onOpenBluetoothClicked();
 	void onRefreshScenesClicked();
-	void onSceneMappingChanged();
 	void onDeviceSelected(int index);
 	void onRefreshDevicesClicked();
-	void onCameraSelected(int index);
+	void onCurveGammaChanged(int val);
+	void onMinSpeedChanged(int val);
+	void onMaxSpeedChanged(int val);
+	void onZoomSpeedChanged(int val);
+	void onDeadzoneChanged(int val);
 
 private:
 	QTimer *pollTimer;
@@ -41,9 +44,21 @@ private:
 	QLabel *statusLabel;
 	QComboBox *deviceCombo;
 	QPushButton *refreshDevicesBtn;
-	QComboBox *cameraCombo;
+	QLabel *cameraStatusLabel;
 	QPushButton *bluetoothBtn;
 	QPushButton *refreshScenesBtn;
+
+	// Sliders de Curva e Sensibilidade PTZ
+	QSlider *sliderCurve;
+	QLabel *lblCurveVal;
+	QSlider *sliderMinSpeed;
+	QLabel *lblMinSpeedVal;
+	QSlider *sliderMaxSpeed;
+	QLabel *lblMaxSpeedVal;
+	QSlider *sliderZoomSpeed;
+	QLabel *lblZoomSpeedVal;
+	QSlider *sliderDeadzone;
+	QLabel *lblDeadzoneVal;
 
 	// Mapeamentos de Cenas pelo D-Pad - Aba 1
 	QComboBox *combo_dpad_up;

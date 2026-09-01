@@ -61,17 +61,9 @@ GamepadDock::GamepadDock(QWidget *parent)
 	refreshDevicesBtn->setStyleSheet("QPushButton { padding: 4px 8px; }");
 	connect(refreshDevicesBtn, &QPushButton::clicked, this, &GamepadDock::onRefreshDevicesClicked);
 
-	QLabel *lblCam = new QLabel(obs_module_text("🎥 Câmera PTZ:"), this);
-	lblCam->setStyleSheet("font-weight: bold; font-size: 12px;");
-
-	cameraCombo = new QComboBox(this);
-	cameraCombo->addItem(obs_module_text("Câmera 1 (ID: 0)"), 0);
-	cameraCombo->addItem(obs_module_text("Câmera 2 (ID: 1)"), 1);
-	cameraCombo->addItem(obs_module_text("Câmera 3 (ID: 2)"), 2);
-	cameraCombo->addItem(obs_module_text("Câmera 4 (ID: 3)"), 3);
-	cameraCombo->addItem(obs_module_text("Câmera 5 (ID: 4)"), 4);
-	cameraCombo->addItem(obs_module_text("Câmera 6 (ID: 5)"), 5);
-	connect(cameraCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onCameraSelected);
+	cameraStatusLabel = new QLabel(this);
+	cameraStatusLabel->setText(obs_module_text("🎥 PTZ: Auto (PTZ Controls)"));
+	cameraStatusLabel->setStyleSheet("font-weight: bold; font-size: 12px; color: #58a6ff; background: #161b22; padding: 4px 10px; border: 1px solid #30363d; border-radius: 4px;");
 
 	bluetoothBtn = new QPushButton(obs_module_text("🔗 Parear / Bluetooth (Windows)"), this);
 	bluetoothBtn->setStyleSheet("QPushButton { padding: 4px 10px; font-weight: bold; }");
@@ -84,8 +76,7 @@ GamepadDock::GamepadDock(QWidget *parent)
 	topLayout->addWidget(lblDev);
 	topLayout->addWidget(deviceCombo);
 	topLayout->addWidget(refreshDevicesBtn);
-	topLayout->addWidget(lblCam);
-	topLayout->addWidget(cameraCombo);
+	topLayout->addWidget(cameraStatusLabel);
 	topLayout->addStretch();
 	topLayout->addWidget(bluetoothBtn);
 	topLayout->addWidget(refreshScenesBtn);
@@ -262,6 +253,72 @@ GamepadDock::GamepadDock(QWidget *parent)
 	grpBtnLayout->addLayout(btnRow2);
 	tabTestLayout->addWidget(grpButtons);
 
+	// Grupo de Calibração de Curvas e Sensibilidade PTZ
+	QGroupBox *grpCurves = new QGroupBox(obs_module_text("⚙️ Ajustes de Velocidade Progressiva e Sensibilidade PTZ"), tabTest);
+	QGridLayout *gridCurves = new QGridLayout(grpCurves);
+
+	// 1. Curva Exponencial
+	sliderCurve = new QSlider(Qt::Horizontal, grpCurves);
+	sliderCurve->setRange(10, 30);
+	sliderCurve->setValue(22);
+	lblCurveVal = new QLabel("2.2x (Progressivo Suave)", grpCurves);
+	lblCurveVal->setStyleSheet("font-weight: bold; color: #58a6ff;");
+	connect(sliderCurve, &QSlider::valueChanged, this, &GamepadDock::onCurveGammaChanged);
+
+	// 2. Velocidade Mínima (Creep)
+	sliderMinSpeed = new QSlider(Qt::Horizontal, grpCurves);
+	sliderMinSpeed->setRange(1, 20);
+	sliderMinSpeed->setValue(4);
+	lblMinSpeedVal = new QLabel("4%", grpCurves);
+	lblMinSpeedVal->setStyleSheet("font-weight: bold; color: #58a6ff;");
+	connect(sliderMinSpeed, &QSlider::valueChanged, this, &GamepadDock::onMinSpeedChanged);
+
+	// 3. Velocidade Máxima Pan/Tilt
+	sliderMaxSpeed = new QSlider(Qt::Horizontal, grpCurves);
+	sliderMaxSpeed->setRange(20, 100);
+	sliderMaxSpeed->setValue(100);
+	lblMaxSpeedVal = new QLabel("100%", grpCurves);
+	lblMaxSpeedVal->setStyleSheet("font-weight: bold; color: #58a6ff;");
+	connect(sliderMaxSpeed, &QSlider::valueChanged, this, &GamepadDock::onMaxSpeedChanged);
+
+	// 4. Velocidade Zoom
+	sliderZoomSpeed = new QSlider(Qt::Horizontal, grpCurves);
+	sliderZoomSpeed->setRange(20, 100);
+	sliderZoomSpeed->setValue(80);
+	lblZoomSpeedVal = new QLabel("80%", grpCurves);
+	lblZoomSpeedVal->setStyleSheet("font-weight: bold; color: #58a6ff;");
+	connect(sliderZoomSpeed, &QSlider::valueChanged, this, &GamepadDock::onZoomSpeedChanged);
+
+	// 5. Zona Morta (Deadzone)
+	sliderDeadzone = new QSlider(Qt::Horizontal, grpCurves);
+	sliderDeadzone->setRange(0, 25);
+	sliderDeadzone->setValue(12);
+	lblDeadzoneVal = new QLabel("12%", grpCurves);
+	lblDeadzoneVal->setStyleSheet("font-weight: bold; color: #58a6ff;");
+	connect(sliderDeadzone, &QSlider::valueChanged, this, &GamepadDock::onDeadzoneChanged);
+
+	gridCurves->addWidget(new QLabel(obs_module_text("Curva de Aceleração (Suavidade Progressiva):"), grpCurves), 0, 0);
+	gridCurves->addWidget(sliderCurve, 0, 1);
+	gridCurves->addWidget(lblCurveVal, 0, 2);
+
+	gridCurves->addWidget(new QLabel(obs_module_text("Velocidade Mínima (Ajuste Fino Inicial):"), grpCurves), 1, 0);
+	gridCurves->addWidget(sliderMinSpeed, 1, 1);
+	gridCurves->addWidget(lblMinSpeedVal, 1, 2);
+
+	gridCurves->addWidget(new QLabel(obs_module_text("Velocidade Máxima (Pan / Tilt):"), grpCurves), 2, 0);
+	gridCurves->addWidget(sliderMaxSpeed, 2, 1);
+	gridCurves->addWidget(lblMaxSpeedVal, 2, 2);
+
+	gridCurves->addWidget(new QLabel(obs_module_text("Velocidade de Zoom (Stick Direito):"), grpCurves), 3, 0);
+	gridCurves->addWidget(sliderZoomSpeed, 3, 1);
+	gridCurves->addWidget(lblZoomSpeedVal, 3, 2);
+
+	gridCurves->addWidget(new QLabel(obs_module_text("Zona Morta (Deadzone do Analógico):"), grpCurves), 4, 0);
+	gridCurves->addWidget(sliderDeadzone, 4, 1);
+	gridCurves->addWidget(lblDeadzoneVal, 4, 2);
+
+	tabTestLayout->addWidget(grpCurves);
+
 	tabTestLayout->addStretch();
 	tabs->addTab(tabTest, obs_module_text("Tela de Teste & Calibração"));
 
@@ -287,10 +344,11 @@ GamepadDock::GamepadDock(QWidget *parent)
 		"<tr><td><b>D-Pad Direita</b></td><td>Chama <b>Cena 4</b></td><td>Chama <b>Cena 8</b></td><td>Chama <b>Cena 12</b></td></tr>"
 		"<tr><td><b>Bumper LB</b></td><td colspan='3'><b>Corte Seco (Cut)</b> imediato para o Programa</td></tr>"
 		"<tr><td><b>Gatilho LT</b></td><td colspan='3'><b>Transição Suave</b> (Studio Mode: Preview -> Program)</td></tr>"
-		"<tr><td><b>Analógico Esquerdo</b></td><td colspan='3'>Move Pan e Tilt suavemente (com rampa física cinematográfica)</td></tr>"
+		"<tr><td><b>Analógico Esquerdo</b></td><td colspan='3'>Move <b>Pan e Tilt</b> com velocidade progressiva (lento ao mover pouco, rápido no fim)</td></tr>"
+		"<tr><td><b>Analógico Direito</b></td><td colspan='3'><b>Zoom In</b> (empurrar para cima) / <b>Zoom Out</b> (puxar para baixo) com velocidade progressiva</td></tr>"
 		"<tr><td><b>R3 ou Start</b></td><td colspan='3'>Alterna entre <b>Controle Manual</b> e <b>Rastreamento Automático Facial</b></td></tr>"
 		"</table>"
-		"<p style='color: #8b949e; margin-top: 8px;'><i>Dica: O controle assume o modo manual automaticamente assim que você encostar no analógico. Ao terminar, aperte R3 para o Face Tracker voltar a enquadrar sozinho.</i></p>"
+		"<p style='color: #8b949e; margin-top: 8px;'><i>Dica: A câmera controlada é sempre sincronizada automaticamente com a seleção do PTZ Controls. O controle assume o modo manual assim que você mexer nos analógicos.</i></p>"
 	));
 	tabGuideLayout->addWidget(guideText);
 	tabGuideLayout->addStretch();
@@ -350,13 +408,46 @@ void GamepadDock::onDeviceSelected(int index)
 void GamepadDock::onRefreshDevicesClicked()
 {
 	populateDevices();
+void GamepadDock::onCurveGammaChanged(int val)
+{
+	float gamma = (float)val / 10.0f;
+	GamepadController::get_instance().set_curve_gamma(gamma);
+	if (lblCurveVal) {
+		QString desc = (gamma >= 2.0f) ? "(Progressivo Suave)" : ((gamma <= 1.2f) ? "(Linear / Rápido)" : "(Moderado)");
+		lblCurveVal->setText(QString("%1x %2").arg(gamma, 0, 'f', 1).arg(desc));
+	}
 }
 
-void GamepadDock::onCameraSelected(int index)
+void GamepadDock::onMinSpeedChanged(int val)
 {
-	if (index < 0) return;
-	int camId = cameraCombo->itemData(index).toInt();
-	GamepadController::get_instance().set_active_camera(camId);
+	float s = (float)val / 100.0f;
+	GamepadController::get_instance().set_min_speed(s);
+	if (lblMinSpeedVal)
+		lblMinSpeedVal->setText(QString("%1%").arg(val));
+}
+
+void GamepadDock::onMaxSpeedChanged(int val)
+{
+	float s = (float)val / 100.0f;
+	GamepadController::get_instance().set_max_speed(s);
+	if (lblMaxSpeedVal)
+		lblMaxSpeedVal->setText(QString("%1%").arg(val));
+}
+
+void GamepadDock::onZoomSpeedChanged(int val)
+{
+	float s = (float)val / 100.0f;
+	GamepadController::get_instance().set_zoom_speed_mult(s);
+	if (lblZoomSpeedVal)
+		lblZoomSpeedVal->setText(QString("%1%").arg(val));
+}
+
+void GamepadDock::onDeadzoneChanged(int val)
+{
+	float d = (float)val / 100.0f;
+	GamepadController::get_instance().set_deadzone(d);
+	if (lblDeadzoneVal)
+		lblDeadzoneVal->setText(QString("%1%").arg(val));
 }
 
 void GamepadDock::populateScenes()
@@ -461,8 +552,15 @@ void GamepadDock::onTimerUpdate()
 					.arg(pan_pct)
 					.arg(tilt_pct));
 
+	int zoom_pct = (int)std::round(state.zoom_axis * 100.0f);
 	triggerLeftBar->setValue((int)std::round(state.trigger_left * 100.0f));
-	triggerRightBar->setValue((int)std::round(state.trigger_right * 100.0f));
+	triggerRightBar->setValue(std::abs(zoom_pct));
+	triggerRightBar->setFormat(QString("Zoom (Stick Direito): %1%").arg(zoom_pct));
+
+	int active_cam = GamepadController::get_instance().get_obsptz_active_device_id();
+	if (cameraStatusLabel) {
+		cameraStatusLabel->setText(QString("🎥 PTZ: Câmera %1 (Auto PTZ Controls)").arg(active_cam));
+	}
 
 	// Atualiza Badges dos Botões
 	lbl_btn_a->setStyleSheet(badge_style(state.btn_a));
@@ -489,7 +587,11 @@ void GamepadDock::onTimerUpdate()
 void GamepadDock::default_properties(obs_data_t *props)
 {
 	obs_data_set_default_string(props, "selected_device", "auto");
-	obs_data_set_default_int(props, "active_camera", 0);
+	obs_data_set_default_double(props, "ptz_curve_gamma", 2.2);
+	obs_data_set_default_double(props, "ptz_min_speed", 0.04);
+	obs_data_set_default_double(props, "ptz_max_speed", 1.0);
+	obs_data_set_default_double(props, "ptz_zoom_speed", 0.8);
+	obs_data_set_default_double(props, "ptz_deadzone", 0.12);
 
 	obs_data_set_default_string(props, "scene_dpad_up", "");
 	obs_data_set_default_string(props, "scene_dpad_down", "");
@@ -510,7 +612,11 @@ void GamepadDock::default_properties(obs_data_t *props)
 void GamepadDock::save_properties(obs_data_t *props)
 {
 	obs_data_set_string(props, "selected_device", GamepadController::get_instance().get_selected_device().c_str());
-	obs_data_set_int(props, "active_camera", GamepadController::get_instance().get_active_camera());
+	obs_data_set_double(props, "ptz_curve_gamma", (double)GamepadController::get_instance().get_curve_gamma());
+	obs_data_set_double(props, "ptz_min_speed", (double)GamepadController::get_instance().get_min_speed());
+	obs_data_set_double(props, "ptz_max_speed", (double)GamepadController::get_instance().get_max_speed());
+	obs_data_set_double(props, "ptz_zoom_speed", (double)GamepadController::get_instance().get_zoom_speed_mult());
+	obs_data_set_double(props, "ptz_deadzone", (double)GamepadController::get_instance().get_deadzone());
 
 	GamepadSceneConfig &cfg = GamepadController::get_instance().get_scene_config();
 	obs_data_set_string(props, "scene_dpad_up", cfg.scene_dpad_up.c_str());
@@ -536,13 +642,30 @@ void GamepadDock::load_properties(obs_data_t *props)
 		GamepadController::get_instance().set_selected_device(selDev);
 	}
 
-	int cam = (int)obs_data_get_int(props, "active_camera");
-	GamepadController::get_instance().set_active_camera(cam);
-	if (cameraCombo) {
-		int camIdx = cameraCombo->findData(cam);
-		if (camIdx >= 0)
-			cameraCombo->setCurrentIndex(camIdx);
-	}
+	float gamma = (float)obs_data_get_double(props, "ptz_curve_gamma");
+	if (gamma < 0.5f) gamma = 2.2f;
+	GamepadController::get_instance().set_curve_gamma(gamma);
+	if (sliderCurve) sliderCurve->setValue((int)std::round(gamma * 10.0f));
+
+	float min_spd = (float)obs_data_get_double(props, "ptz_min_speed");
+	if (min_spd <= 0.0f) min_spd = 0.04f;
+	GamepadController::get_instance().set_min_speed(min_spd);
+	if (sliderMinSpeed) sliderMinSpeed->setValue((int)std::round(min_spd * 100.0f));
+
+	float max_spd = (float)obs_data_get_double(props, "ptz_max_speed");
+	if (max_spd <= 0.0f) max_spd = 1.0f;
+	GamepadController::get_instance().set_max_speed(max_spd);
+	if (sliderMaxSpeed) sliderMaxSpeed->setValue((int)std::round(max_spd * 100.0f));
+
+	float zoom_spd = (float)obs_data_get_double(props, "ptz_zoom_speed");
+	if (zoom_spd <= 0.0f) zoom_spd = 0.8f;
+	GamepadController::get_instance().set_zoom_speed_mult(zoom_spd);
+	if (sliderZoomSpeed) sliderZoomSpeed->setValue((int)std::round(zoom_spd * 100.0f));
+
+	float dz = (float)obs_data_get_double(props, "ptz_deadzone");
+	if (dz <= 0.0f) dz = 0.12f;
+	GamepadController::get_instance().set_deadzone(dz);
+	if (sliderDeadzone) sliderDeadzone->setValue((int)std::round(dz * 100.0f));
 
 	GamepadSceneConfig &cfg = GamepadController::get_instance().get_scene_config();
 	cfg.scene_dpad_up = obs_data_get_string(props, "scene_dpad_up");

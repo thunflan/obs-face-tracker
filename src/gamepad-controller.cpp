@@ -46,14 +46,18 @@ GamepadController &GamepadController::get_instance()
 
 GamepadController::GamepadController()
 	: enabled(true),
-	  active_camera(0),
-	  deadzone(0.15f),
+	  active_camera(1),
+	  deadzone(0.12f),
 	  sensitivity(1.0f),
 	  is_manual_override(false),
 	  last_manual_activity_ns(0),
 	  prev_buttons(0),
 	  prev_lt(0.0f),
 	  prev_rt(0.0f),
+	  curve_gamma(2.2f),
+	  min_speed(0.04f),
+	  max_speed(1.0f),
+	  zoom_speed_mult(0.8f),
 	  selected_device_id("auto"),
 	  active_device_name("")
 {
@@ -73,15 +77,58 @@ GamepadController::~GamepadController()
 	}
 }
 
-static inline float apply_axis_curve(float raw, float deadzone, float curve_pow = 2.2f)
+static inline float apply_progressive_curve(float raw, float deadzone, float curve_pow, float min_spd, float max_spd)
 {
 	float abs_val = std::abs(raw);
 	if (abs_val <= deadzone)
 		return 0.0f;
 
 	float norm = (abs_val - deadzone) / (1.0f - deadzone);
+	norm = std::clamp(norm, 0.0f, 1.0f);
 	float curved = std::pow(norm, curve_pow);
-	return (raw < 0.0f) ? -curved : curved;
+	float spd = min_spd + (max_spd - min_spd) * curved;
+	spd = std::clamp(spd, 0.0f, max_spd);
+	return (raw < 0.0f) ? -spd : spd;
+}
+
+int GamepadController::get_obsptz_active_device_id()
+{
+	static int cached_id = 1;
+	static uint64_t last_check_ns = 0;
+	uint64_t now_ns = os_gettime_ns();
+
+	// Verifica o arquivo de configuração do obs-ptz a cada 200ms para seguir a seleção ativa do PTZ Controls
+	if (now_ns - last_check_ns > 200000000ULL) {
+		last_check_ns = now_ns;
+		const char *appdata = getenv("APPDATA");
+		if (appdata) {
+			std::string cfg_path = std::string(appdata) + "\\obs-studio\\plugin_config\\obs-ptz\\config.json";
+			FILE *fp = os_fopen(cfg_path.c_str(), "rb");
+			if (fp) {
+				fseek(fp, 0, SEEK_END);
+				long len = ftell(fp);
+				fseek(fp, 0, SEEK_SET);
+				if (len > 0 && len < 65536) {
+					std::string content(len, '\0');
+					size_t read_bytes = fread(&content[0], 1, len, fp);
+					if (read_bytes == (size_t)len) {
+						size_t pos = content.find("\"current_selected\"");
+						if (pos != std::string::npos) {
+							size_t colon = content.find(':', pos);
+							if (colon != std::string::npos) {
+								int id = std::atoi(content.c_str() + colon + 1);
+								if (id >= 0) {
+									cached_id = id;
+								}
+							}
+						}
+					}
+				}
+				fclose(fp);
+			}
+		}
+	}
+	return cached_id;
 }
 
 static void switch_scene_by_name(const std::string &scene_name, bool preview_only)
@@ -215,20 +262,20 @@ bool GamepadController::poll_state(GamepadState &state)
 		raw_lx = std::clamp(raw_lx, -1.0f, 1.0f);
 		raw_ly = std::clamp(raw_ly, -1.0f, 1.0f);
 
-		state.pan_axis = apply_axis_curve(raw_lx, deadzone) * sensitivity;
-		state.tilt_axis = apply_axis_curve(raw_ly, deadzone) * sensitivity;
+		state.pan_axis = apply_progressive_curve(raw_lx, deadzone, curve_gamma, min_speed, max_speed * sensitivity);
+		state.tilt_axis = apply_progressive_curve(raw_ly, deadzone, curve_gamma, min_speed, max_speed * sensitivity);
 
 		int16_t trig_l = SDL_GameControllerGetAxis(s_current_controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT);
 		int16_t trig_r = SDL_GameControllerGetAxis(s_current_controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
 		state.trigger_left = std::clamp((float)trig_l / 32767.0f, 0.0f, 1.0f);
 		state.trigger_right = std::clamp((float)trig_r / 32767.0f, 0.0f, 1.0f);
 
-		float zoom = 0.0f;
-		if (state.trigger_right > 0.05f)
-			zoom += (state.trigger_right - 0.05f) / 0.95f;
-		if (state.trigger_left > 0.05f)
-			zoom -= (state.trigger_left - 0.05f) / 0.95f;
-		state.zoom_axis = std::clamp(zoom * sensitivity, -1.0f, 1.0f);
+		// Zoom no Analógico Direito (Stick Direito Y):
+		// Empurrar para cima = Zoom In (+) progressivo | Puxar para baixo = Zoom Out (-) progressivo
+		int16_t axis_ry = SDL_GameControllerGetAxis(s_current_controller, SDL_CONTROLLER_AXIS_RIGHTY);
+		float raw_ry = -(float)axis_ry / 32767.0f;
+		raw_ry = std::clamp(raw_ry, -1.0f, 1.0f);
+		state.zoom_axis = apply_progressive_curve(raw_ry, deadzone, curve_gamma, min_speed, max_speed * zoom_speed_mult * sensitivity);
 
 		state.btn_a = SDL_GameControllerGetButton(s_current_controller, SDL_CONTROLLER_BUTTON_A) != 0;
 		state.btn_b = SDL_GameControllerGetButton(s_current_controller, SDL_CONTROLLER_BUTTON_B) != 0;
@@ -263,8 +310,15 @@ bool GamepadController::poll_state(GamepadState &state)
 			int16_t axis_y = SDL_JoystickGetAxis(s_current_joystick, 1);
 			float raw_lx = (float)axis_x / 32767.0f;
 			float raw_ly = -(float)axis_y / 32767.0f;
-			state.pan_axis = apply_axis_curve(raw_lx, deadzone) * sensitivity;
-			state.tilt_axis = apply_axis_curve(raw_ly, deadzone) * sensitivity;
+			state.pan_axis = apply_progressive_curve(raw_lx, deadzone, curve_gamma, min_speed, max_speed * sensitivity);
+			state.tilt_axis = apply_progressive_curve(raw_ly, deadzone, curve_gamma, min_speed, max_speed * sensitivity);
+		}
+
+		if (numAxes >= 4) {
+			int16_t axis_ry = SDL_JoystickGetAxis(s_current_joystick, 3);
+			float raw_ry = -(float)axis_ry / 32767.0f;
+			raw_ry = std::clamp(raw_ry, -1.0f, 1.0f);
+			state.zoom_axis = apply_progressive_curve(raw_ry, deadzone, curve_gamma, min_speed, max_speed * zoom_speed_mult * sensitivity);
 		}
 
 		int numButtons = SDL_JoystickNumButtons(s_current_joystick);
@@ -509,10 +563,12 @@ bool GamepadController::tick(float dt, GamepadState &state)
 		preset_to_call = is_rt_held ? 12 : (is_rb_held ? 8 : 4);
 	}
 
+	int target_camera = get_obsptz_active_device_id();
+
 	if (preset_to_call > 0) {
-		recall_ptz_preset(active_camera, preset_to_call);
+		recall_ptz_preset(target_camera, preset_to_call);
 		if (on_preset)
-			on_preset(active_camera, preset_to_call);
+			on_preset(target_camera, preset_to_call);
 	}
 
 	// 4. RETORNO AO RASTREAMENTO FACIAL APÓS 5 SEGUNDOS DE INATIVIDADE
@@ -530,23 +586,23 @@ bool GamepadController::tick(float dt, GamepadState &state)
 	static float s_last_sent_zoom = 0.0f;
 	static uint64_t s_last_send_time_ns = 0;
 
-	bool is_moving = (std::abs(state.pan_axis) > 0.04f || std::abs(state.tilt_axis) > 0.04f || std::abs(state.zoom_axis) > 0.04f);
-	bool was_moving = (std::abs(s_last_sent_pan) > 0.04f || std::abs(s_last_sent_tilt) > 0.04f || std::abs(s_last_sent_zoom) > 0.04f);
+	bool is_moving = (std::abs(state.pan_axis) > 0.02f || std::abs(state.tilt_axis) > 0.02f || std::abs(state.zoom_axis) > 0.02f);
+	bool was_moving = (std::abs(s_last_sent_pan) > 0.02f || std::abs(s_last_sent_tilt) > 0.02f || std::abs(s_last_sent_zoom) > 0.02f);
 
 	if (is_moving) {
 		if (now_ns - s_last_send_time_ns > 33000000ULL ||
-		    std::abs(state.pan_axis - s_last_sent_pan) > 0.04f ||
-		    std::abs(state.tilt_axis - s_last_sent_tilt) > 0.04f ||
-		    std::abs(state.zoom_axis - s_last_sent_zoom) > 0.04f) {
-			send_ptz_move(active_camera, state.pan_axis, state.tilt_axis, state.zoom_axis);
+		    std::abs(state.pan_axis - s_last_sent_pan) > 0.02f ||
+		    std::abs(state.tilt_axis - s_last_sent_tilt) > 0.02f ||
+		    std::abs(state.zoom_axis - s_last_sent_zoom) > 0.02f) {
+			send_ptz_move(target_camera, state.pan_axis, state.tilt_axis, state.zoom_axis);
 			s_last_sent_pan = state.pan_axis;
 			s_last_sent_tilt = state.tilt_axis;
 			s_last_sent_zoom = state.zoom_axis;
 			s_last_send_time_ns = now_ns;
 		}
 	} else if (was_moving) {
-		send_ptz_move(active_camera, 0.0f, 0.0f, 0.0f);
-		send_ptz_stop(active_camera);
+		send_ptz_move(target_camera, 0.0f, 0.0f, 0.0f);
+		send_ptz_stop(target_camera);
 		s_last_sent_pan = 0.0f;
 		s_last_sent_tilt = 0.0f;
 		s_last_sent_zoom = 0.0f;
@@ -557,7 +613,7 @@ bool GamepadController::tick(float dt, GamepadState &state)
 		int p_spd = (int)std::round(state.pan_axis * 100.0f);
 		int t_spd = (int)std::round(state.tilt_axis * 100.0f);
 		int z_spd = (int)std::round(state.zoom_axis * 100.0f);
-		on_speed(active_camera, p_spd, t_spd, z_spd);
+		on_speed(target_camera, p_spd, t_spd, z_spd);
 	}
 
 	return true;

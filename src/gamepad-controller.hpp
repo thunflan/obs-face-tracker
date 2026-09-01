@@ -77,6 +77,11 @@ private:
 	float prev_lt;
 	float prev_rt;
 
+	float curve_gamma;
+	float min_speed;
+	float max_speed;
+	float zoom_speed_mult;
+
 	SpeedCallback on_speed;
 	PresetCallback on_preset;
 	CameraChangeCallback on_camera_change;
@@ -103,6 +108,19 @@ public:
 	void set_sensitivity(float sens) { sensitivity = sens; }
 	float get_sensitivity() const { return sensitivity; }
 
+	void set_curve_gamma(float g) { curve_gamma = g; }
+	float get_curve_gamma() const { return curve_gamma; }
+
+	void set_min_speed(float s) { min_speed = s; }
+	float get_min_speed() const { return min_speed; }
+
+	void set_max_speed(float s) { max_speed = s; }
+	float get_max_speed() const { return max_speed; }
+
+	void set_zoom_speed_mult(float z) { zoom_speed_mult = z; }
+	float get_zoom_speed_mult() const { return zoom_speed_mult; }
+
+	int get_obsptz_active_device_id();
 	void set_active_camera(int cam) { active_camera = cam; }
 	int get_active_camera() const { return active_camera; }
 
