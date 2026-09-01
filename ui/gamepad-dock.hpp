@@ -12,6 +12,7 @@ class QPushButton;
 class QProgressBar;
 class QTimer;
 class QGroupBox;
+class QSlider;
 
 class GamepadDock : public QFrame {
 	Q_OBJECT

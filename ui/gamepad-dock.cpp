@@ -12,6 +12,7 @@
 #include <QPushButton>
 #include <QComboBox>
 #include <QProgressBar>
+#include <QSlider>
 #include <QTimer>
 #include <QDesktopServices>
 #include <QUrl>
@@ -408,6 +409,8 @@ void GamepadDock::onDeviceSelected(int index)
 void GamepadDock::onRefreshDevicesClicked()
 {
 	populateDevices();
+}
+
 void GamepadDock::onCurveGammaChanged(int val)
 {
 	float gamma = (float)val / 10.0f;
