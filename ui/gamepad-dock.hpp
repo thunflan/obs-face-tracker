@@ -32,6 +32,7 @@ private slots:
 	void onSceneMappingChanged();
 	void onDeviceSelected(int index);
 	void onRefreshDevicesClicked();
+	void onCameraSelected(int index);
 
 private:
 	QTimer *pollTimer;
@@ -40,6 +41,7 @@ private:
 	QLabel *statusLabel;
 	QComboBox *deviceCombo;
 	QPushButton *refreshDevicesBtn;
+	QComboBox *cameraCombo;
 	QPushButton *bluetoothBtn;
 	QPushButton *refreshScenesBtn;
 

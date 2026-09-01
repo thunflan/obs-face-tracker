@@ -1026,9 +1026,9 @@ static void ftptz_tick(void *data, float second)
 	const bool was_rendered = s->rendered;
 	s->ftm->tick(second);
 
-	// 1. Atualiza e processa controle por Gamepad (Xbox / PS5)
-	GamepadState gp_state;
-	if (s->gamepad.tick(second, gp_state) && gp_state.manual_active) {
+	// 1. Atualiza e processa controle por Gamepad (Xbox / PS5 / Wireless Controller)
+	GamepadState gp_state = GamepadController::get_instance().get_last_state();
+	if (GamepadController::get_instance().is_enabled() && gp_state.manual_active) {
 		float target_pan = gp_state.pan_axis * 24.0f;
 		float target_tilt = gp_state.tilt_axis * 20.0f;
 		float target_zoom = gp_state.zoom_axis * 7.0f;

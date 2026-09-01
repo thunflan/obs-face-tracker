@@ -301,16 +301,85 @@ bool GamepadController::poll_state(GamepadState &state)
 	return false;
 }
 
+static proc_handler_t *get_ptz_proc_handler()
+{
+	proc_handler_t *main_ph = obs_get_proc_handler();
+	if (!main_ph)
+		return nullptr;
+
+	proc_handler_t *ptz_ph = nullptr;
+	calldata_t cd;
+	calldata_init(&cd);
+	if (proc_handler_call(main_ph, "ptz_get_proc_handler", &cd)) {
+		calldata_get_ptr(&cd, "return", &ptz_ph);
+	}
+	calldata_free(&cd);
+
+	return ptz_ph ? ptz_ph : main_ph;
+}
+
+static void send_ptz_move(int device_id, float pan, float tilt, float zoom)
+{
+	proc_handler_t *ph = get_ptz_proc_handler();
+	if (!ph)
+		return;
+
+	calldata_t cd;
+	calldata_init(&cd);
+	calldata_set_int(&cd, "device_id", device_id);
+	calldata_set_float(&cd, "pan", pan);
+	calldata_set_float(&cd, "tilt", tilt);
+	calldata_set_float(&cd, "zoom", zoom);
+	calldata_set_float(&cd, "focus", 0.0f);
+
+	proc_handler_call(ph, "ptz_move_continuous", &cd);
+	proc_handler_call(ph, "ptz_pantilt", &cd);
+	calldata_free(&cd);
+}
+
+static void send_ptz_stop(int device_id)
+{
+	proc_handler_t *ph = get_ptz_proc_handler();
+	if (!ph)
+		return;
+
+	calldata_t cd;
+	calldata_init(&cd);
+	calldata_set_int(&cd, "device_id", device_id);
+	proc_handler_call(ph, "ptz_stop", &cd);
+	calldata_free(&cd);
+}
+
 static void recall_ptz_preset(int camera_idx, int preset_num)
 {
-	blog(LOG_INFO, "[Gamepad PTZ] Recalling preset %d on camera %d", preset_num, camera_idx);
-	proc_handler_t *ph = obs_get_proc_handler();
-	if (ph) {
-		calldata_t cd;
+	blog(LOG_INFO, "[Gamepad PTZ] Chamando preset %d no dispositivo PTZ %d", preset_num, camera_idx);
+	proc_handler_t *ph = get_ptz_proc_handler();
+	if (!ph)
+		return;
+
+	calldata_t cd;
+
+	// 1. Envio 1-based (ex: Preset 1 -> preset_id = 1)
+	calldata_init(&cd);
+	calldata_set_int(&cd, "device_id", camera_idx);
+	calldata_set_int(&cd, "preset_id", preset_num);
+	calldata_set_int(&cd, "preset", preset_num);
+	calldata_set_int(&cd, "preset_num", preset_num);
+	calldata_set_int(&cd, "camera_index", camera_idx);
+	proc_handler_call(ph, "ptz_preset_recall", &cd);
+	proc_handler_call(ph, "preset_recall", &cd);
+	calldata_free(&cd);
+
+	// 2. Envio 0-based (ex: Preset 1 -> preset_id = 0 para protocolos VISCA)
+	if (preset_num > 0) {
 		calldata_init(&cd);
+		calldata_set_int(&cd, "device_id", camera_idx);
+		calldata_set_int(&cd, "preset_id", preset_num - 1);
+		calldata_set_int(&cd, "preset", preset_num - 1);
+		calldata_set_int(&cd, "preset_num", preset_num - 1);
 		calldata_set_int(&cd, "camera_index", camera_idx);
-		calldata_set_int(&cd, "preset", preset_num);
 		proc_handler_call(ph, "ptz_preset_recall", &cd);
+		proc_handler_call(ph, "preset_recall", &cd);
 		calldata_free(&cd);
 	}
 }
@@ -324,8 +393,8 @@ bool GamepadController::tick(float dt, GamepadState &state)
 		return false;
 
 	uint64_t now_ns = os_gettime_ns();
-	bool stick_active = (std::abs(state.pan_axis) > 0.01f || std::abs(state.tilt_axis) > 0.01f ||
-			     std::abs(state.zoom_axis) > 0.01f);
+	bool stick_active = (std::abs(state.pan_axis) > 0.02f || std::abs(state.tilt_axis) > 0.02f ||
+			     std::abs(state.zoom_axis) > 0.02f);
 
 	if (stick_active) {
 		is_manual_override = true;
@@ -446,13 +515,42 @@ bool GamepadController::tick(float dt, GamepadState &state)
 			on_preset(active_camera, preset_to_call);
 	}
 
-	// 4. RETORNO AO RASTREAMENTO FACIAL APÓS 5 SEGUNDOS
+	// 4. RETORNO AO RASTREAMENTO FACIAL APÓS 5 SEGUNDOS DE INATIVIDADE
 	if (is_manual_override && !stick_active) {
 		if (now_ns - last_manual_activity_ns > 5000000000ULL) {
 			is_manual_override = false;
 			if (on_mode_toggle)
 				on_mode_toggle(is_manual_override);
 		}
+	}
+
+	// 5. ENVIO DIRETO DE VELOCIDADE PTZ (Pan, Tilt, Zoom)
+	static float s_last_sent_pan = 0.0f;
+	static float s_last_sent_tilt = 0.0f;
+	static float s_last_sent_zoom = 0.0f;
+	static uint64_t s_last_send_time_ns = 0;
+
+	bool is_moving = (std::abs(state.pan_axis) > 0.04f || std::abs(state.tilt_axis) > 0.04f || std::abs(state.zoom_axis) > 0.04f);
+	bool was_moving = (std::abs(s_last_sent_pan) > 0.04f || std::abs(s_last_sent_tilt) > 0.04f || std::abs(s_last_sent_zoom) > 0.04f);
+
+	if (is_moving) {
+		if (now_ns - s_last_send_time_ns > 33000000ULL ||
+		    std::abs(state.pan_axis - s_last_sent_pan) > 0.04f ||
+		    std::abs(state.tilt_axis - s_last_sent_tilt) > 0.04f ||
+		    std::abs(state.zoom_axis - s_last_sent_zoom) > 0.04f) {
+			send_ptz_move(active_camera, state.pan_axis, state.tilt_axis, state.zoom_axis);
+			s_last_sent_pan = state.pan_axis;
+			s_last_sent_tilt = state.tilt_axis;
+			s_last_sent_zoom = state.zoom_axis;
+			s_last_send_time_ns = now_ns;
+		}
+	} else if (was_moving) {
+		send_ptz_move(active_camera, 0.0f, 0.0f, 0.0f);
+		send_ptz_stop(active_camera);
+		s_last_sent_pan = 0.0f;
+		s_last_sent_tilt = 0.0f;
+		s_last_sent_zoom = 0.0f;
+		s_last_send_time_ns = now_ns;
 	}
 
 	if (is_manual_override && on_speed) {

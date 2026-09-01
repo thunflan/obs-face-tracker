@@ -54,12 +54,24 @@ GamepadDock::GamepadDock(QWidget *parent)
 	lblDev->setStyleSheet("font-weight: bold; font-size: 12px;");
 
 	deviceCombo = new QComboBox(this);
-	deviceCombo->setMinimumWidth(230);
+	deviceCombo->setMinimumWidth(200);
 	connect(deviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onDeviceSelected);
 
 	refreshDevicesBtn = new QPushButton(obs_module_text("🔄 Dispositivos"), this);
 	refreshDevicesBtn->setStyleSheet("QPushButton { padding: 4px 8px; }");
 	connect(refreshDevicesBtn, &QPushButton::clicked, this, &GamepadDock::onRefreshDevicesClicked);
+
+	QLabel *lblCam = new QLabel(obs_module_text("🎥 Câmera PTZ:"), this);
+	lblCam->setStyleSheet("font-weight: bold; font-size: 12px;");
+
+	cameraCombo = new QComboBox(this);
+	cameraCombo->addItem(obs_module_text("Câmera 1 (ID: 0)"), 0);
+	cameraCombo->addItem(obs_module_text("Câmera 2 (ID: 1)"), 1);
+	cameraCombo->addItem(obs_module_text("Câmera 3 (ID: 2)"), 2);
+	cameraCombo->addItem(obs_module_text("Câmera 4 (ID: 3)"), 3);
+	cameraCombo->addItem(obs_module_text("Câmera 5 (ID: 4)"), 4);
+	cameraCombo->addItem(obs_module_text("Câmera 6 (ID: 5)"), 5);
+	connect(cameraCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onCameraSelected);
 
 	bluetoothBtn = new QPushButton(obs_module_text("🔗 Parear / Bluetooth (Windows)"), this);
 	bluetoothBtn->setStyleSheet("QPushButton { padding: 4px 10px; font-weight: bold; }");
@@ -72,6 +84,8 @@ GamepadDock::GamepadDock(QWidget *parent)
 	topLayout->addWidget(lblDev);
 	topLayout->addWidget(deviceCombo);
 	topLayout->addWidget(refreshDevicesBtn);
+	topLayout->addWidget(lblCam);
+	topLayout->addWidget(cameraCombo);
 	topLayout->addStretch();
 	topLayout->addWidget(bluetoothBtn);
 	topLayout->addWidget(refreshScenesBtn);
@@ -338,6 +352,13 @@ void GamepadDock::onRefreshDevicesClicked()
 	populateDevices();
 }
 
+void GamepadDock::onCameraSelected(int index)
+{
+	if (index < 0) return;
+	int camId = cameraCombo->itemData(index).toInt();
+	GamepadController::get_instance().set_active_camera(camId);
+}
+
 void GamepadDock::populateScenes()
 {
 	QStringList scenesList;
@@ -468,6 +489,7 @@ void GamepadDock::onTimerUpdate()
 void GamepadDock::default_properties(obs_data_t *props)
 {
 	obs_data_set_default_string(props, "selected_device", "auto");
+	obs_data_set_default_int(props, "active_camera", 0);
 
 	obs_data_set_default_string(props, "scene_dpad_up", "");
 	obs_data_set_default_string(props, "scene_dpad_down", "");
@@ -488,6 +510,7 @@ void GamepadDock::default_properties(obs_data_t *props)
 void GamepadDock::save_properties(obs_data_t *props)
 {
 	obs_data_set_string(props, "selected_device", GamepadController::get_instance().get_selected_device().c_str());
+	obs_data_set_int(props, "active_camera", GamepadController::get_instance().get_active_camera());
 
 	GamepadSceneConfig &cfg = GamepadController::get_instance().get_scene_config();
 	obs_data_set_string(props, "scene_dpad_up", cfg.scene_dpad_up.c_str());
@@ -511,6 +534,14 @@ void GamepadDock::load_properties(obs_data_t *props)
 	const char *selDev = obs_data_get_string(props, "selected_device");
 	if (selDev && *selDev) {
 		GamepadController::get_instance().set_selected_device(selDev);
+	}
+
+	int cam = (int)obs_data_get_int(props, "active_camera");
+	GamepadController::get_instance().set_active_camera(cam);
+	if (cameraCombo) {
+		int camIdx = cameraCombo->findData(cam);
+		if (camIdx >= 0)
+			cameraCombo->setCurrentIndex(camIdx);
 	}
 
 	GamepadSceneConfig &cfg = GamepadController::get_instance().get_scene_config();
