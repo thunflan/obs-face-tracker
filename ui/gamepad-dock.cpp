@@ -472,9 +472,6 @@ void GamepadDock::load_properties(obs_data_t *props)
 	populateScenes();
 }
 
-	populateScenes();
-}
-
 static void save_load_gamepad_dock(obs_data_t *save_data, bool saving, void *)
 {
 	if (saving) {
