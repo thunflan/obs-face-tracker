@@ -4,6 +4,66 @@
 #include <vector>
 #include <functional>
 
+enum class VirtualAction {
+	BtnA = 0,
+	BtnB,
+	BtnX,
+	BtnY,
+	BtnLB,
+	BtnRB,
+	BtnLT,
+	BtnRT,
+	DpadUp,
+	DpadDown,
+	DpadLeft,
+	DpadRight,
+	BtnStart,
+	BtnBack,
+	BtnThumbL,
+	BtnThumbR,
+	Count
+};
+
+enum class BindingType {
+	None = 0,
+	SdlButton,
+	SdlHat,
+	SdlAxis
+};
+
+struct InputBinding {
+	BindingType type;
+	int index;
+	int param; // Para Hat: bitmask (1=Up, 2=Right, 4=Down, 8=Left). Para Eixo: +1 ou -1
+	std::string display_name;
+
+	InputBinding() : type(BindingType::None), index(-1), param(0), display_name("Não Mapeado") {}
+	InputBinding(BindingType t, int idx, int p = 0, const std::string &disp = "")
+		: type(t), index(idx), param(p), display_name(disp) {}
+};
+
+struct AxisBinding {
+	int axis_index;
+	bool inverted;
+	std::string display_name;
+
+	AxisBinding() : axis_index(-1), inverted(false), display_name("Padrão") {}
+	AxisBinding(int idx, bool inv = false, const std::string &disp = "")
+		: axis_index(idx), inverted(inv), display_name(disp) {}
+};
+
+struct GamepadCustomProfile {
+	std::string name;
+	std::string device_guid;
+	bool is_custom;
+	InputBinding bindings[(int)VirtualAction::Count];
+	AxisBinding axis_pan;
+	AxisBinding axis_tilt;
+	AxisBinding axis_zoom;
+
+	GamepadCustomProfile() : is_custom(false) {}
+};
+
 struct GamepadState {
 	bool connected;
 	float pan_axis;   // -1.0f a +1.0f
@@ -30,6 +90,7 @@ struct GamepadState {
 	bool btn_thumb_r;
 	bool manual_active;
 	int active_camera_index;
+	std::string last_raw_input_desc;
 };
 
 struct GamepadSceneConfig {
@@ -55,6 +116,7 @@ struct GamepadSceneConfig {
 struct ControllerDeviceInfo {
 	std::string id;        // "auto", "sdl_0", "sdl_1", etc.
 	std::string name;      // Nome do controle tal como o Windows usa (ex: "Wireless Controller")
+	std::string guid;      // GUID identificador único de hardware do controle
 	bool is_gamecontroller;
 	int index;
 };
@@ -92,6 +154,18 @@ private:
 
 	std::string selected_device_id;
 	std::string active_device_name;
+	std::string active_device_guid;
+
+	// Perfis e Mapeamento
+	std::vector<GamepadCustomProfile> profiles;
+	std::string active_profile_name;
+	GamepadCustomProfile default_auto_profile;
+
+	// Modo de Escuta para Rebind / Wizard
+	bool is_listening_input;
+	VirtualAction listening_action;
+	std::function<void(VirtualAction, const InputBinding &)> on_bound_callback;
+	std::string last_raw_input_desc;
 
 public:
 	GamepadController();
@@ -139,6 +213,32 @@ public:
 	void set_selected_device(const std::string &id) { selected_device_id = id; }
 	std::string get_selected_device() const { return selected_device_id; }
 	std::string get_active_device_name() const { return active_device_name; }
+	std::string get_active_device_guid() const { return active_device_guid; }
+
+	// Modo de Escuta para Rebind / Wizard
+	typedef std::function<void(VirtualAction action, const InputBinding &binding)> OnInputBoundCallback;
+	void start_listening(VirtualAction action, OnInputBoundCallback cb);
+	void cancel_listening();
+	bool is_listening() const { return is_listening_input; }
+	VirtualAction get_listening_action() const { return listening_action; }
+	std::string get_last_raw_input() const { return last_raw_input_desc; }
+
+	// Gerenciamento de Perfis
+	std::vector<GamepadCustomProfile> &get_profiles() { return profiles; }
+	const std::vector<GamepadCustomProfile> &get_profiles() const { return profiles; }
+	GamepadCustomProfile *find_profile(const std::string &name);
+	GamepadCustomProfile &get_active_profile();
+	std::string get_active_profile_name() const { return active_profile_name; }
+	void set_active_profile(const std::string &name);
+	void add_or_update_profile(const GamepadCustomProfile &prof);
+	void delete_profile(const std::string &name);
+
+	static GamepadCustomProfile create_auto_profile();
+	static GamepadCustomProfile create_default_xbox_profile();
+	static GamepadCustomProfile create_default_playstation_profile();
+
+	void save_profiles(struct obs_data *props);
+	void load_profiles(struct obs_data *props);
 
 	// Lê o estado atual do controle e dispara as ações necessárias
 	bool tick(float dt, GamepadState &state);
@@ -148,4 +248,7 @@ public:
 
 	bool is_manual() const { return is_manual_override; }
 	void set_manual(bool manual) { is_manual_override = manual; }
+
+	// Verifica se o plugin PTZ está instalado e disponível no OBS
+	bool is_ptz_available();
 };

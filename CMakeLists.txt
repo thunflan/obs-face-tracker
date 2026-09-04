@@ -65,7 +65,6 @@ configure_file(
 	installer/installer-Windows.iss.in
 	installer-Windows.generated.iss
 )
-
 configure_file(
 	ci/ci_includes.sh.in
 	ci/ci_includes.generated.sh
@@ -75,13 +74,24 @@ configure_file(
 	ci/ci_includes.generated.cmd
 )
 
-set(PLUGIN_SOURCES
-	src/module-main.c
+if(OS_WINDOWS)
+	if (MSVC)
+		add_definitions(/MP /d2FH4-)
+		add_definitions("-D_USE_MATH_DEFINES")
+		add_definitions("-D_CRT_SECURE_NO_WARNINGS")
+		add_definitions("-D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR")
+	endif()
+endif()
+
+# ==============================================================================
+# 1. PLUGIN: obs-face-tracker (Digital Face Tracker Filter & Dock)
+# ==============================================================================
+set(FACE_TRACKER_SOURCES
+	src/module-face-tracker.c
 	src/face-tracker.cpp
 	src/source_list.cc
 	src/face-tracker-preset.cpp
 	src/face-tracker-manager.cpp
-	src/face-tracker-ptz.cpp
 	src/face-tracker-monitor.cpp
 	src/face-detector-base.cpp
 	src/face-detector-dlib-hog.cpp
@@ -90,87 +100,136 @@ set(PLUGIN_SOURCES
 	src/face-tracker-dlib.cpp
 	src/texture-object.cpp
 	src/helper.cpp
-	src/ptz-backend.cpp
-	src/obsptz-backend.cpp
-	src/dummy-backend.cpp
-	src/gamepad-controller.cpp
 )
 
-if (WITH_PTZ_TCP)
-	set(PLUGIN_SOURCES ${PLUGIN_SOURCES} src/libvisca-thread.cpp)
-endif()
 if (WITH_DOCK)
-	set(PLUGIN_SOURCES
-		${PLUGIN_SOURCES}
+	list(APPEND FACE_TRACKER_SOURCES
 		ui/face-tracker-dock.cpp
 		ui/face-tracker-widget.cpp
-		ui/gamepad-dock.cpp
 	)
 endif()
 
-add_library(${CMAKE_PROJECT_NAME} MODULE ${PLUGIN_SOURCES})
-
-if (WITH_DOCK)
-	set(plugin_additional_incs ${plugin_additional_incs} src)
-	set(plugin_additional_libs ${plugin_additional_libs} Qt::Gui Qt::Widgets Qt::GuiPrivate)
-endif()
-
-include_directories(
+add_library(obs-face-tracker MODULE ${FACE_TRACKER_SOURCES})
+target_link_libraries(obs-face-tracker
+	OBS::libobs
+	OBS::obs-frontend-api
+	dlib
+	Qt::Gui Qt::Widgets Qt::GuiPrivate
+)
+target_include_directories(obs-face-tracker PRIVATE
+	${CMAKE_CURRENT_BINARY_DIR}
+	${CMAKE_CURRENT_SOURCE_DIR}/src
 	${CMAKE_CURRENT_SOURCE_DIR}/dlib
-	${plugin_additional_incs}
+)
+if(OS_WINDOWS)
+	target_link_libraries(obs-face-tracker OBS::w32-pthreads)
+endif()
+setup_plugin_target(obs-face-tracker)
+
+
+# ==============================================================================
+# 2. PLUGIN: obs-ptz-tracker (PTZ Hardware Camera Tracking & Control)
+# ==============================================================================
+set(PTZ_TRACKER_SOURCES
+	src/module-ptz-tracker.c
+	src/face-tracker-ptz.cpp
+	src/face-tracker-preset.cpp
+	src/face-tracker-manager.cpp
+	src/face-detector-base.cpp
+	src/face-detector-dlib-hog.cpp
+	src/face-detector-dlib-cnn.cpp
+	src/face-tracker-base.cpp
+	src/face-tracker-dlib.cpp
+	src/texture-object.cpp
+	src/helper.cpp
+	src/source_list.cc
+	src/ptz-backend.cpp
+	src/obsptz-backend.cpp
+	src/dummy-backend.cpp
 )
 
-target_link_libraries(${CMAKE_PROJECT_NAME}
+if (WITH_PTZ_TCP)
+	list(APPEND PTZ_TRACKER_SOURCES src/libvisca-thread.cpp)
+endif()
+
+add_library(obs-ptz-tracker MODULE ${PTZ_TRACKER_SOURCES})
+target_link_libraries(obs-ptz-tracker
 	OBS::libobs
 	OBS::obs-frontend-api
 	dlib
 	${plugin_additional_libs}
+	Qt::Gui Qt::Widgets
+)
+target_include_directories(obs-ptz-tracker PRIVATE
+	${CMAKE_CURRENT_BINARY_DIR}
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}/dlib
+	${plugin_additional_incs}
+)
+if(OS_WINDOWS)
+	target_link_libraries(obs-ptz-tracker OBS::w32-pthreads)
+endif()
+setup_plugin_target(obs-ptz-tracker)
+
+
+# ==============================================================================
+# 3. PLUGIN: obs-joystick-controller (Gamepad PTZ & Mesa de Corte)
+# ==============================================================================
+set(JOYSTICK_CONTROLLER_SOURCES
+	src/module-joystick-controller.c
+	src/gamepad-controller.cpp
+	ui/gamepad-dock.cpp
 )
 
-target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+add_library(obs-joystick-controller MODULE ${JOYSTICK_CONTROLLER_SOURCES})
+target_link_libraries(obs-joystick-controller
+	OBS::libobs
+	OBS::obs-frontend-api
+	Qt::Gui Qt::Widgets Qt::GuiPrivate
+)
+target_include_directories(obs-joystick-controller PRIVATE
 	${CMAKE_CURRENT_BINARY_DIR}
+	${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 if(OS_WINDOWS)
-	# Enable Multicore Builds and disable FH4 (to not depend on VCRUNTIME140_1.DLL when building with VS2019)
-	if (MSVC)
-		add_definitions(/MP /d2FH4-)
-		add_definitions("-D_USE_MATH_DEFINES")
-		add_definitions("-D_CRT_SECURE_NO_WARNINGS") # to avoid a warning for `fopen`
-		add_definitions("-D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR") # TODO: Remove once requiring OBS 30.2 or later.
-	endif()
-
-	target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+	target_include_directories(obs-joystick-controller PRIVATE
 		${CMAKE_CURRENT_SOURCE_DIR}/deps/SDL2/include
 	)
-	target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
+	target_link_directories(obs-joystick-controller PRIVATE
 		${CMAKE_CURRENT_SOURCE_DIR}/deps/SDL2/lib/x64
 	)
-	target_link_libraries(${CMAKE_PROJECT_NAME} OBS::w32-pthreads SDL2)
+	target_link_libraries(obs-joystick-controller OBS::w32-pthreads SDL2)
 endif()
+setup_plugin_target(obs-joystick-controller)
 
+
+# ==============================================================================
+# Common flags and options
+# ==============================================================================
 if(OS_LINUX)
-	target_compile_options(${CMAKE_PROJECT_NAME}
-		PRIVATE
-		-Wall
-		-Wextra
-		-Wunused-function
-		-Werror
-		-Wno-error=deprecated-declarations # TODO: Replace obs_frontend_add_dock with the new API.
-	)
-	target_link_options(${CMAKE_PROJECT_NAME} PRIVATE "-Wl,-z,defs")
+	foreach(_tgt obs-face-tracker obs-ptz-tracker obs-joystick-controller)
+		target_compile_options(${_tgt}
+			PRIVATE
+			-Wall
+			-Wextra
+			-Wunused-function
+			-Werror
+			-Wno-error=deprecated-declarations
+		)
+		target_link_options(${_tgt} PRIVATE "-Wl,-z,defs")
+	endforeach()
 endif()
 
 if(APPLE)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -fvisibility=default")
-
-	set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES PREFIX "")
-	set(MACOSX_PLUGIN_GUI_IDENTIFIER "${MACOS_BUNDLEID}")
-	set(MACOSX_PLUGIN_BUNDLE_VERSION "${CMAKE_PROJECT_VERSION}")
-	set(MACOSX_PLUGIN_SHORT_VERSION_STRING "1")
+	foreach(_tgt obs-face-tracker obs-ptz-tracker obs-joystick-controller)
+		set_target_properties(${_tgt} PROPERTIES PREFIX "")
+		set(MACOSX_PLUGIN_GUI_IDENTIFIER "${MACOS_BUNDLEID}")
+		set(MACOSX_PLUGIN_BUNDLE_VERSION "${CMAKE_PROJECT_VERSION}")
+		set(MACOSX_PLUGIN_SHORT_VERSION_STRING "1")
+	endforeach()
 endif()
-
-setup_plugin_target(${CMAKE_PROJECT_NAME})
 
 configure_file(installer/installer-macOS.pkgproj.in installer-macOS.generated.pkgproj)
 

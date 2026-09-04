@@ -19,6 +19,7 @@
 #include <QMainWindow>
 #include <QAction>
 #include <QScrollArea>
+#include <QInputDialog>
 
 static GamepadDock *s_gamepad_dock = nullptr;
 
@@ -174,7 +175,140 @@ GamepadDock::GamepadDock(QWidget *parent)
 	connect(combo_rt_dpad_right, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onSceneMappingChanged);
 
 	// ==========================================
-	// ABA 2: Tela de Teste e Calibração ao Vivo
+	// ABA 2: Mapeamento & Perfis (Estilo Emulador)
+	// ==========================================
+	QWidget *tabMapping = new QWidget(this);
+	QVBoxLayout *tabMappingLayout = new QVBoxLayout(tabMapping);
+
+	// Barra Superior do Perfil
+	QGroupBox *grpProfile = new QGroupBox(obs_module_text("Perfis de Controle"), tabMapping);
+	QHBoxLayout *profLayout = new QHBoxLayout(grpProfile);
+	profLayout->setContentsMargins(6, 4, 6, 4);
+	profLayout->setSpacing(8);
+
+	QLabel *lblProf = new QLabel(obs_module_text("Perfil:"), grpProfile);
+	profileCombo = new QComboBox(grpProfile);
+	profileCombo->setMinimumWidth(180);
+	connect(profileCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GamepadDock::onProfileSelected);
+
+	btnNewProfile = new QPushButton(obs_module_text("➕ Novo"), grpProfile);
+	connect(btnNewProfile, &QPushButton::clicked, this, &GamepadDock::onNewProfileClicked);
+
+	btnSaveProfile = new QPushButton(obs_module_text("💾 Salvar"), grpProfile);
+	connect(btnSaveProfile, &QPushButton::clicked, this, &GamepadDock::onSaveProfileClicked);
+
+	btnResetXbox = new QPushButton(obs_module_text("🎮 Padrão Xbox"), grpProfile);
+	connect(btnResetXbox, &QPushButton::clicked, this, &GamepadDock::onResetXboxProfileClicked);
+
+	btnResetPS = new QPushButton(obs_module_text("🎮 Padrão PS"), grpProfile);
+	connect(btnResetPS, &QPushButton::clicked, this, &GamepadDock::onResetPlaystationProfileClicked);
+
+	btnDeleteProfile = new QPushButton(obs_module_text("🗑️ Excluir"), grpProfile);
+	connect(btnDeleteProfile, &QPushButton::clicked, this, &GamepadDock::onDeleteProfileClicked);
+
+	profLayout->addWidget(lblProf);
+	profLayout->addWidget(profileCombo);
+	profLayout->addWidget(btnNewProfile);
+	profLayout->addWidget(btnSaveProfile);
+	profLayout->addWidget(btnResetXbox);
+	profLayout->addWidget(btnResetPS);
+	profLayout->addWidget(btnDeleteProfile);
+	profLayout->addStretch();
+	tabMappingLayout->addWidget(grpProfile);
+
+	// Assistente e Status
+	QHBoxLayout *wizLayout = new QHBoxLayout();
+	btnWizard = new QPushButton(obs_module_text("🧙 Assistente de Mapeamento Completo (Passo a Passo)"), tabMapping);
+	btnWizard->setStyleSheet("QPushButton { font-weight: bold; padding: 6px 12px; background-color: #238636; color: white; border-radius: 4px; } QPushButton:hover { background-color: #2ea44f; }");
+	connect(btnWizard, &QPushButton::clicked, this, &GamepadDock::onStartWizardClicked);
+
+	lblRebindStatus = new QLabel(obs_module_text("Status: Pronto. Escolha uma ação abaixo ou inicie o assistente."), tabMapping);
+	lblRebindStatus->setStyleSheet("font-size: 11px; color: #58a6ff; font-weight: bold;");
+
+	wizLayout->addWidget(btnWizard);
+	wizLayout->addWidget(lblRebindStatus);
+	wizLayout->addStretch();
+	tabMappingLayout->addLayout(wizLayout);
+
+	// Tabela / Grade de Mapeamento com Scroll
+	QScrollArea *scroll = new QScrollArea(tabMapping);
+	scroll->setWidgetResizable(true);
+	scroll->setStyleSheet("QScrollArea { border: 1px solid #30363d; background: #0d1117; }");
+	QWidget *scrollContent = new QWidget(scroll);
+	QGridLayout *gridRemap = new QGridLayout(scrollContent);
+	gridRemap->setContentsMargins(8, 8, 8, 8);
+	gridRemap->setHorizontalSpacing(12);
+	gridRemap->setVerticalSpacing(6);
+
+	// Cabeçalho
+	QLabel *hAction = new QLabel("Ação Virtual (Função)", scrollContent);
+	hAction->setStyleSheet("font-weight: bold; color: #8b949e;");
+	QLabel *hBind = new QLabel("Entrada Vinculada Atual", scrollContent);
+	hBind->setStyleSheet("font-weight: bold; color: #8b949e;");
+	QLabel *hMap = new QLabel("Mapear", scrollContent);
+	hMap->setStyleSheet("font-weight: bold; color: #8b949e;");
+	QLabel *hClr = new QLabel("Limpar", scrollContent);
+	hClr->setStyleSheet("font-weight: bold; color: #8b949e;");
+
+	gridRemap->addWidget(hAction, 0, 0);
+	gridRemap->addWidget(hBind, 0, 1);
+	gridRemap->addWidget(hMap, 0, 2);
+	gridRemap->addWidget(hClr, 0, 3);
+
+	rebindRows.resize((int)VirtualAction::Count);
+
+	const char *actionDescriptions[(int)VirtualAction::Count] = {
+		"Botão A (Preset 1 / Seleção)",
+		"Botão B (Preset 2 / Voltar)",
+		"Botão X (Preset 3)",
+		"Botão Y (Preset 4)",
+		"Bumper LB (Corte Seco)",
+		"Bumper RB (Modificador 1)",
+		"Gatilho LT (Transição)",
+		"Gatilho RT (Modificador 2)",
+		"D-Pad Cima (Cena 1)",
+		"D-Pad Baixo (Cena 2)",
+		"D-Pad Esquerda (Cena 3)",
+		"D-Pad Direita (Cena 4)",
+		"Menu / Start (Modo Manual/Auto)",
+		"View / Back / Select",
+		"Analógico L3 (Clique Esquerdo)",
+		"Analógico R3 (Clique Direito)"
+	};
+
+	for (int i = 0; i < (int)VirtualAction::Count; i++) {
+		QLabel *lAct = new QLabel(actionDescriptions[i], scrollContent);
+		lAct->setStyleSheet("font-weight: 500; font-size: 11px;");
+
+		QLabel *lCur = new QLabel("Padrão", scrollContent);
+		lCur->setStyleSheet("color: #58a6ff; font-family: monospace; font-size: 11px; background: #161b22; padding: 2px 6px; border-radius: 3px; border: 1px solid #30363d;");
+
+		QPushButton *bMap = new QPushButton("🎯 Mapear", scrollContent);
+		bMap->setStyleSheet("padding: 3px 10px; font-size: 11px;");
+		connect(bMap, &QPushButton::clicked, [this, i]() {
+			this->onRebindButtonClicked(i);
+		});
+
+		QPushButton *bClr = new QPushButton("✖", scrollContent);
+		bClr->setStyleSheet("padding: 3px 6px; font-size: 11px; color: #f85149;");
+		connect(bClr, &QPushButton::clicked, [this, i]() {
+			this->onClearBindingClicked(i);
+		});
+
+		rebindRows[i] = {lAct, lCur, bMap, bClr};
+
+		gridRemap->addWidget(lAct, i + 1, 0);
+		gridRemap->addWidget(lCur, i + 1, 1);
+		gridRemap->addWidget(bMap, i + 1, 2);
+		gridRemap->addWidget(bClr, i + 1, 3);
+	}
+
+	scroll->setWidget(scrollContent);
+	tabMappingLayout->addWidget(scroll);
+	tabs->addTab(tabMapping, obs_module_text("🎮 Mapeamento & Perfis"));
+
+	// ==========================================
+	// ABA 3: Tela de Teste e Calibração ao Vivo
 	// ==========================================
 	QWidget *tabTest = new QWidget(this);
 	QVBoxLayout *tabTestLayout = new QVBoxLayout(tabTest);
@@ -193,39 +327,56 @@ GamepadDock::GamepadDock(QWidget *parent)
 	stickLeftYBar->setValue(0);
 	stickLeftYBar->setFormat("Tilt (Vertical): %v%");
 
+	stickRightYBar = new QProgressBar(grpSticks);
+	stickRightYBar->setRange(-100, 100);
+	stickRightYBar->setValue(0);
+	stickRightYBar->setFormat("Stick Dir / Zoom: %v%");
+
 	triggerLeftBar = new QProgressBar(grpSticks);
 	triggerLeftBar->setRange(0, 100);
 	triggerLeftBar->setValue(0);
-	triggerLeftBar->setFormat("Gatilho LT (Transição / Zoom Out): %v%");
+	triggerLeftBar->setFormat("Gatilho LT (Transição): %v%");
 
 	triggerRightBar = new QProgressBar(grpSticks);
 	triggerRightBar->setRange(0, 100);
 	triggerRightBar->setValue(0);
-	triggerRightBar->setFormat("Gatilho RT (Modificador / Zoom In): %v%");
+	triggerRightBar->setFormat("Gatilho RT (Modificador): %v%");
 
 	gridSticks->addWidget(stickLeftLabel, 0, 0, 1, 2);
 	gridSticks->addWidget(stickLeftXBar, 1, 0);
 	gridSticks->addWidget(stickLeftYBar, 1, 1);
 	gridSticks->addWidget(triggerLeftBar, 2, 0);
 	gridSticks->addWidget(triggerRightBar, 2, 1);
+	gridSticks->addWidget(stickRightYBar, 3, 0, 1, 2);
 	tabTestLayout->addWidget(grpSticks);
 
-	// Indicadores dos Botões
-	QGroupBox *grpButtons = new QGroupBox(obs_module_text("Estado dos Botões Físicos"), tabTest);
+	// Indicadores dos 16 Botões Físicos
+	QGroupBox *grpButtons = new QGroupBox(obs_module_text("Estado dos 16 Botões Físicos"), tabTest);
+	QVBoxLayout *grpBtnLayout = new QVBoxLayout(grpButtons);
 	QHBoxLayout *btnRow1 = new QHBoxLayout();
 	QHBoxLayout *btnRow2 = new QHBoxLayout();
-	QVBoxLayout *grpBtnLayout = new QVBoxLayout(grpButtons);
+	QHBoxLayout *btnRow3 = new QHBoxLayout();
+	QHBoxLayout *btnRow4 = new QHBoxLayout();
 
-	lbl_btn_a = new QLabel("A (Preset 1 / Cena 1)", grpButtons);
-	lbl_btn_b = new QLabel("B (Preset 2 / Cena 2)", grpButtons);
-	lbl_btn_x = new QLabel("X (Preset 3 / Cena 3)", grpButtons);
-	lbl_btn_y = new QLabel("Y (Preset 4 / Cena 4)", grpButtons);
+	lbl_btn_a = new QLabel("A (Preset 1)", grpButtons);
+	lbl_btn_b = new QLabel("B (Preset 2)", grpButtons);
+	lbl_btn_x = new QLabel("X (Preset 3)", grpButtons);
+	lbl_btn_y = new QLabel("Y (Preset 4)", grpButtons);
 
 	lbl_btn_lb = new QLabel("LB (Corte Seco)", grpButtons);
-	lbl_btn_rb = new QLabel("RB (Modificador 1)", grpButtons);
-	lbl_btn_lt = new QLabel("LT (Transição)", grpButtons);
-	lbl_btn_rt = new QLabel("RT (Modificador 2)", grpButtons);
-	lbl_dpad = new QLabel("D-Pad (Preview)", grpButtons);
+	lbl_btn_rb = new QLabel("RB (Mod 1)", grpButtons);
+	lbl_btn_lt = new QLabel("LT (Trans)", grpButtons);
+	lbl_btn_rt = new QLabel("RT (Mod 2)", grpButtons);
+
+	lbl_dpad_up = new QLabel("D-Pad Cima", grpButtons);
+	lbl_dpad_down = new QLabel("D-Pad Baixo", grpButtons);
+	lbl_dpad_left = new QLabel("D-Pad Esq", grpButtons);
+	lbl_dpad_right = new QLabel("D-Pad Dir", grpButtons);
+
+	lbl_btn_start = new QLabel("Start / Menu", grpButtons);
+	lbl_btn_back = new QLabel("Back / View", grpButtons);
+	lbl_btn_thumb_l = new QLabel("L3 (Stick E)", grpButtons);
+	lbl_btn_thumb_r = new QLabel("R3 (Stick D)", grpButtons);
 	lbl_mode = new QLabel("Modo: Rastreamento", grpButtons);
 
 	lbl_btn_a->setStyleSheet(badge_style(false));
@@ -236,23 +387,50 @@ GamepadDock::GamepadDock(QWidget *parent)
 	lbl_btn_rb->setStyleSheet(badge_style(false));
 	lbl_btn_lt->setStyleSheet(badge_style(false));
 	lbl_btn_rt->setStyleSheet(badge_style(false));
-	lbl_dpad->setStyleSheet(badge_style(false));
+	lbl_dpad_up->setStyleSheet(badge_style(false));
+	lbl_dpad_down->setStyleSheet(badge_style(false));
+	lbl_dpad_left->setStyleSheet(badge_style(false));
+	lbl_dpad_right->setStyleSheet(badge_style(false));
+	lbl_btn_start->setStyleSheet(badge_style(false));
+	lbl_btn_back->setStyleSheet(badge_style(false));
+	lbl_btn_thumb_l->setStyleSheet(badge_style(false));
+	lbl_btn_thumb_r->setStyleSheet(badge_style(false));
 	lbl_mode->setStyleSheet(badge_style(false));
 
 	btnRow1->addWidget(lbl_btn_a);
 	btnRow1->addWidget(lbl_btn_b);
 	btnRow1->addWidget(lbl_btn_x);
 	btnRow1->addWidget(lbl_btn_y);
-	btnRow1->addWidget(lbl_btn_lb);
+
+	btnRow2->addWidget(lbl_btn_lb);
 	btnRow2->addWidget(lbl_btn_rb);
 	btnRow2->addWidget(lbl_btn_lt);
 	btnRow2->addWidget(lbl_btn_rt);
-	btnRow2->addWidget(lbl_dpad);
-	btnRow2->addWidget(lbl_mode);
+
+	btnRow3->addWidget(lbl_dpad_up);
+	btnRow3->addWidget(lbl_dpad_down);
+	btnRow3->addWidget(lbl_dpad_left);
+	btnRow3->addWidget(lbl_dpad_right);
+
+	btnRow4->addWidget(lbl_btn_start);
+	btnRow4->addWidget(lbl_btn_back);
+	btnRow4->addWidget(lbl_btn_thumb_l);
+	btnRow4->addWidget(lbl_btn_thumb_r);
+	btnRow4->addWidget(lbl_mode);
 
 	grpBtnLayout->addLayout(btnRow1);
 	grpBtnLayout->addLayout(btnRow2);
+	grpBtnLayout->addLayout(btnRow3);
+	grpBtnLayout->addLayout(btnRow4);
 	tabTestLayout->addWidget(grpButtons);
+
+	// Monitor de Entrada Bruta (Sniffer)
+	QGroupBox *grpSniffer = new QGroupBox(obs_module_text("📡 Monitor de Entrada de Hardware Bruta (Sniffer de Botões & Eixos)"), tabTest);
+	QVBoxLayout *snifferLayout = new QVBoxLayout(grpSniffer);
+	lblRawInput = new QLabel("Última entrada física detectada: Nenhuma", grpSniffer);
+	lblRawInput->setStyleSheet("background: #0d1117; color: #58a6ff; font-family: Consolas, monospace; font-size: 12px; padding: 6px; border: 1px solid #30363d; border-radius: 4px;");
+	snifferLayout->addWidget(lblRawInput);
+	tabTestLayout->addWidget(grpSniffer);
 
 	// Grupo de Calibração de Curvas e Sensibilidade PTZ
 	QGroupBox *grpCurves = new QGroupBox(obs_module_text("⚙️ Ajustes de Velocidade Progressiva e Sensibilidade PTZ"), tabTest);
@@ -357,11 +535,17 @@ GamepadDock::GamepadDock(QWidget *parent)
 
 	rootLayout->addWidget(tabs);
 
-	// Preenche lista de cenas e dispositivos inicial
+	wizardStepIndex = 0;
+	isWizardActive = false;
+
+	// Preenche lista de cenas, dispositivos e perfis inicial
 	populateScenes();
 	populateDevices();
+	populateProfiles();
+	updateRebindUI();
 
 	// Timer de polling e atualização da tela de teste (30 Hz)
+
 	pollTimer = new QTimer(this);
 	connect(pollTimer, &QTimer::timeout, this, &GamepadDock::onTimerUpdate);
 	pollTimer->start(33);
@@ -557,18 +741,28 @@ void GamepadDock::onTimerUpdate()
 
 	int zoom_pct = (int)std::round(state.zoom_axis * 100.0f);
 	triggerLeftBar->setValue((int)std::round(state.trigger_left * 100.0f));
-	triggerRightBar->setValue(std::abs(zoom_pct));
-	triggerRightBar->setFormat(QString("Zoom (Stick Direito): %1%").arg(zoom_pct));
+	triggerRightBar->setValue((int)std::round(state.trigger_right * 100.0f));
+	if (stickRightYBar) {
+		stickRightYBar->setValue(zoom_pct);
+		stickRightYBar->setFormat(QString("Zoom (Stick Dir): %1%").arg(zoom_pct));
+	}
 
 	int active_cam = GamepadController::get_instance().get_obsptz_active_device_id();
 	std::string active_name = GamepadController::get_instance().get_obsptz_active_device_name();
+	bool ptz_available = GamepadController::get_instance().is_ptz_available();
 	if (cameraStatusLabel) {
-		cameraStatusLabel->setText(QString("🎥 PTZ: %1 (ID: %2)")
-						.arg(QString::fromUtf8(active_name.c_str()))
-						.arg(active_cam));
+		if (ptz_available) {
+			cameraStatusLabel->setText(QString("🎥 PTZ: %1 (ID: %2) - Conectado")
+							.arg(QString::fromUtf8(active_name.c_str()))
+							.arg(active_cam));
+			cameraStatusLabel->setStyleSheet("font-weight: bold; font-size: 12px; color: #58a6ff; background: #161b22; padding: 4px 10px; border: 1px solid #30363d; border-radius: 4px;");
+		} else {
+			cameraStatusLabel->setText(obs_module_text("⚠️ PTZ: Plugin PTZ NÃO detectado! (Instalação Necessária)"));
+			cameraStatusLabel->setStyleSheet("font-weight: bold; font-size: 12px; color: #ff7b72; background: #2d1515; padding: 4px 10px; border: 1px solid #f85149; border-radius: 4px;");
+		}
 	}
 
-	// Atualiza Badges dos Botões
+	// Atualiza Badges de Todos os 16 Botões Físicos
 	lbl_btn_a->setStyleSheet(badge_style(state.btn_a));
 	lbl_btn_b->setStyleSheet(badge_style(state.btn_b));
 	lbl_btn_x->setStyleSheet(badge_style(state.btn_x));
@@ -577,9 +771,20 @@ void GamepadDock::onTimerUpdate()
 	lbl_btn_rb->setStyleSheet(badge_style(state.btn_rb));
 	lbl_btn_lt->setStyleSheet(badge_style(state.trigger_left > 0.4f || state.btn_lt));
 	lbl_btn_rt->setStyleSheet(badge_style(state.trigger_right > 0.4f || state.btn_rt));
+	lbl_dpad_up->setStyleSheet(badge_style(state.dpad_up));
+	lbl_dpad_down->setStyleSheet(badge_style(state.dpad_down));
+	lbl_dpad_left->setStyleSheet(badge_style(state.dpad_left));
+	lbl_dpad_right->setStyleSheet(badge_style(state.dpad_right));
+	lbl_btn_start->setStyleSheet(badge_style(state.btn_start));
+	lbl_btn_back->setStyleSheet(badge_style(state.btn_back));
+	lbl_btn_thumb_l->setStyleSheet(badge_style(state.btn_thumb_l));
+	lbl_btn_thumb_r->setStyleSheet(badge_style(state.btn_thumb_r));
 
-	bool dpad_any = (state.dpad_up || state.dpad_down || state.dpad_left || state.dpad_right);
-	lbl_dpad->setStyleSheet(badge_style(dpad_any));
+	if (lblRawInput) {
+		std::string rawDesc = state.last_raw_input_desc;
+		if (rawDesc.empty()) rawDesc = "Nenhuma";
+		lblRawInput->setText(QString("📡 Entrada Física Bruta: %1").arg(QString::fromUtf8(rawDesc.c_str())));
+	}
 
 	if (state.manual_active) {
 		lbl_mode->setText("Modo: Manual (Operador)");
@@ -639,6 +844,8 @@ void GamepadDock::save_properties(obs_data_t *props)
 	obs_data_set_string(props, "scene_rt_dpad_down", cfg.scene_rt_dpad_down.c_str());
 	obs_data_set_string(props, "scene_rt_dpad_left", cfg.scene_rt_dpad_left.c_str());
 	obs_data_set_string(props, "scene_rt_dpad_right", cfg.scene_rt_dpad_right.c_str());
+
+	GamepadController::get_instance().save_profiles(props);
 }
 
 void GamepadDock::load_properties(obs_data_t *props)
@@ -689,8 +896,274 @@ void GamepadDock::load_properties(obs_data_t *props)
 	cfg.scene_rt_dpad_left = obs_data_get_string(props, "scene_rt_dpad_left");
 	cfg.scene_rt_dpad_right = obs_data_get_string(props, "scene_rt_dpad_right");
 
+	GamepadController::get_instance().load_profiles(props);
+
 	populateScenes();
 	populateDevices();
+	populateProfiles();
+	updateRebindUI();
+}
+
+void GamepadDock::populateProfiles()
+{
+	if (!profileCombo) return;
+	profileCombo->blockSignals(true);
+	profileCombo->clear();
+
+	const auto &profs = GamepadController::get_instance().get_profiles();
+	std::string active = GamepadController::get_instance().get_active_profile_name();
+	int selectIdx = 0;
+
+	for (size_t i = 0; i < profs.size(); i++) {
+		profileCombo->addItem(QString::fromUtf8(profs[i].name.c_str()));
+		if (profs[i].name == active) {
+			selectIdx = (int)i;
+		}
+	}
+
+	profileCombo->setCurrentIndex(selectIdx);
+	profileCombo->blockSignals(false);
+}
+
+void GamepadDock::updateRebindUI()
+{
+	GamepadCustomProfile &p = GamepadController::get_instance().get_active_profile();
+	for (int i = 0; i < (int)VirtualAction::Count && i < (int)rebindRows.size(); i++) {
+		if (rebindRows[i].lblCurrentBind) {
+			if (!p.is_custom) {
+				rebindRows[i].lblCurrentBind->setText("⚡ Automático (Nativo)");
+				rebindRows[i].lblCurrentBind->setStyleSheet("color: #7ee787; font-family: monospace; font-size: 11px; background: #161b22; padding: 2px 6px; border-radius: 3px; border: 1px solid #30363d;");
+			} else {
+				const auto &b = p.bindings[i];
+				if (b.type == BindingType::None) {
+					rebindRows[i].lblCurrentBind->setText("Não Mapeado");
+					rebindRows[i].lblCurrentBind->setStyleSheet("color: #8b949e; font-family: monospace; font-size: 11px; background: #161b22; padding: 2px 6px; border-radius: 3px; border: 1px solid #30363d;");
+				} else {
+					rebindRows[i].lblCurrentBind->setText(QString::fromUtf8(b.display_name.c_str()));
+					rebindRows[i].lblCurrentBind->setStyleSheet("color: #58a6ff; font-weight: bold; font-family: monospace; font-size: 11px; background: #161b22; padding: 2px 6px; border-radius: 3px; border: 1px solid #30363d;");
+				}
+			}
+		}
+		if (rebindRows[i].btnMap) {
+			rebindRows[i].btnMap->setText("🎯 Mapear");
+			rebindRows[i].btnMap->setStyleSheet("padding: 3px 10px; font-size: 11px;");
+		}
+	}
+}
+
+void GamepadDock::onProfileSelected(int index)
+{
+	if (index < 0) return;
+	QString name = profileCombo->itemText(index);
+	GamepadController::get_instance().set_active_profile(name.toUtf8().constData());
+	updateRebindUI();
+}
+
+void GamepadDock::onNewProfileClicked()
+{
+	bool ok = false;
+	QString name = QInputDialog::getText(this, obs_module_text("Novo Perfil"),
+	                                     obs_module_text("Nome do Perfil de Controle:"),
+	                                     QLineEdit::Normal, "Meu Controle Customizado", &ok);
+	if (!ok || name.trimmed().isEmpty())
+		return;
+
+	GamepadCustomProfile p;
+	p.name = name.trimmed().toUtf8().constData();
+	p.is_custom = true;
+	p.device_guid = GamepadController::get_instance().get_active_device_guid();
+
+	GamepadController::get_instance().add_or_update_profile(p);
+	GamepadController::get_instance().set_active_profile(p.name);
+	populateProfiles();
+	updateRebindUI();
+	if (lblRebindStatus)
+		lblRebindStatus->setText(QString("Novo perfil criado: %1").arg(name));
+}
+
+void GamepadDock::onSaveProfileClicked()
+{
+	if (lblRebindStatus) {
+		lblRebindStatus->setText(obs_module_text("✅ Perfil salvo com sucesso nas configurações do OBS!"));
+	}
+}
+
+void GamepadDock::onDeleteProfileClicked()
+{
+	std::string cur = GamepadController::get_instance().get_active_profile_name();
+	if (cur == "⚡ Automático (Padrão)" || cur == "Xbox Controller (Padrão)" || cur == "PlayStation (Padrão)") {
+		if (lblRebindStatus)
+			lblRebindStatus->setText(obs_module_text("⚠️ Não é possível excluir perfis padrão do sistema."));
+		return;
+	}
+
+	GamepadController::get_instance().delete_profile(cur);
+	populateProfiles();
+	updateRebindUI();
+	if (lblRebindStatus)
+		lblRebindStatus->setText(obs_module_text("Perfil excluído."));
+}
+
+void GamepadDock::onResetXboxProfileClicked()
+{
+	GamepadCustomProfile &p = GamepadController::get_instance().get_active_profile();
+	if (!p.is_custom) {
+		GamepadCustomProfile xbox = GamepadController::create_default_xbox_profile();
+		xbox.name = "Xbox Remapeado";
+		GamepadController::get_instance().add_or_update_profile(xbox);
+		GamepadController::get_instance().set_active_profile(xbox.name);
+	} else {
+		GamepadCustomProfile xbox = GamepadController::create_default_xbox_profile();
+		for (int i = 0; i < (int)VirtualAction::Count; i++) {
+			p.bindings[i] = xbox.bindings[i];
+		}
+		p.axis_pan = xbox.axis_pan;
+		p.axis_tilt = xbox.axis_tilt;
+		p.axis_zoom = xbox.axis_zoom;
+	}
+	populateProfiles();
+	updateRebindUI();
+	if (lblRebindStatus)
+		lblRebindStatus->setText(obs_module_text("✅ Mapeamento padrão Xbox aplicado com sucesso!"));
+}
+
+void GamepadDock::onResetPlaystationProfileClicked()
+{
+	GamepadCustomProfile &p = GamepadController::get_instance().get_active_profile();
+	if (!p.is_custom) {
+		GamepadCustomProfile ps = GamepadController::create_default_playstation_profile();
+		ps.name = "PlayStation Remapeado";
+		GamepadController::get_instance().add_or_update_profile(ps);
+		GamepadController::get_instance().set_active_profile(ps.name);
+	} else {
+		GamepadCustomProfile ps = GamepadController::create_default_playstation_profile();
+		for (int i = 0; i < (int)VirtualAction::Count; i++) {
+			p.bindings[i] = ps.bindings[i];
+		}
+		p.axis_pan = ps.axis_pan;
+		p.axis_tilt = ps.axis_tilt;
+		p.axis_zoom = ps.axis_zoom;
+	}
+	populateProfiles();
+	updateRebindUI();
+	if (lblRebindStatus)
+		lblRebindStatus->setText(obs_module_text("✅ Mapeamento padrão PlayStation aplicado com sucesso!"));
+}
+
+void GamepadDock::onStartWizardClicked()
+{
+	isWizardActive = true;
+	wizardStepIndex = 0;
+
+	GamepadCustomProfile &p = GamepadController::get_instance().get_active_profile();
+	if (!p.is_custom) {
+		GamepadCustomProfile customP = GamepadController::create_default_xbox_profile();
+		customP.name = "Controle Personalizado";
+		GamepadController::get_instance().add_or_update_profile(customP);
+		GamepadController::get_instance().set_active_profile(customP.name);
+		populateProfiles();
+	}
+
+	advanceWizard();
+}
+
+void GamepadDock::advanceWizard()
+{
+	if (!isWizardActive) return;
+
+	if (wizardStepIndex >= (int)VirtualAction::Count) {
+		isWizardActive = false;
+		if (lblRebindStatus)
+			lblRebindStatus->setText(obs_module_text("🎉 Parabéns! Todos os 16 botões foram mapeados com sucesso!"));
+		updateRebindUI();
+		return;
+	}
+
+	int act = wizardStepIndex;
+	if (lblRebindStatus) {
+		lblRebindStatus->setText(QString("🧙 Passo %1 de 16: Pressione o botão para [%2] no controle...")
+		                         .arg(act + 1)
+		                         .arg(rebindRows[act].lblAction ? rebindRows[act].lblAction->text() : ""));
+	}
+
+	for (int i = 0; i < (int)rebindRows.size(); i++) {
+		if (i == act) {
+			rebindRows[i].btnMap->setText("👉 Aperte agora!");
+			rebindRows[i].btnMap->setStyleSheet("background-color: #d29922; color: black; font-weight: bold; padding: 3px 10px; font-size: 11px;");
+		} else {
+			rebindRows[i].btnMap->setText("🎯 Mapear");
+			rebindRows[i].btnMap->setStyleSheet("padding: 3px 10px; font-size: 11px;");
+		}
+	}
+
+	GamepadController::get_instance().start_listening((VirtualAction)act, [this, act](VirtualAction action, const InputBinding &binding) {
+		GamepadCustomProfile &prof = GamepadController::get_instance().get_active_profile();
+		prof.bindings[(int)action] = binding;
+		wizardStepIndex++;
+		this->advanceWizard();
+	});
+}
+
+void GamepadDock::onRebindButtonClicked(int actionInt)
+{
+	if (actionInt < 0 || actionInt >= (int)VirtualAction::Count) return;
+
+	isWizardActive = false;
+	GamepadCustomProfile &p = GamepadController::get_instance().get_active_profile();
+	if (!p.is_custom) {
+		GamepadCustomProfile customP = GamepadController::create_default_xbox_profile();
+		customP.name = "Controle Personalizado";
+		GamepadController::get_instance().add_or_update_profile(customP);
+		GamepadController::get_instance().set_active_profile(customP.name);
+		populateProfiles();
+	}
+
+	for (int i = 0; i < (int)rebindRows.size(); i++) {
+		if (i == actionInt) {
+			rebindRows[i].btnMap->setText("👉 Aperte...");
+			rebindRows[i].btnMap->setStyleSheet("background-color: #d29922; color: black; font-weight: bold; padding: 3px 10px; font-size: 11px;");
+		} else {
+			rebindRows[i].btnMap->setText("🎯 Mapear");
+			rebindRows[i].btnMap->setStyleSheet("padding: 3px 10px; font-size: 11px;");
+		}
+	}
+
+	if (lblRebindStatus) {
+		lblRebindStatus->setText(QString("Aguardando entrada para [%1]... Pressione qualquer botão ou gatilho.")
+		                         .arg(rebindRows[actionInt].lblAction ? rebindRows[actionInt].lblAction->text() : ""));
+	}
+
+	GamepadController::get_instance().start_listening((VirtualAction)actionInt, [this, actionInt](VirtualAction action, const InputBinding &binding) {
+		GamepadCustomProfile &prof = GamepadController::get_instance().get_active_profile();
+		prof.bindings[(int)action] = binding;
+		if (this->lblRebindStatus) {
+			this->lblRebindStatus->setText(QString("✅ [%1] mapeado para [%2]!")
+			                               .arg(rebindRows[(int)action].lblAction ? rebindRows[(int)action].lblAction->text() : "")
+			                               .arg(QString::fromUtf8(binding.display_name.c_str())));
+		}
+		this->updateRebindUI();
+	});
+}
+
+void GamepadDock::onClearBindingClicked(int actionInt)
+{
+	if (actionInt < 0 || actionInt >= (int)VirtualAction::Count) return;
+
+	GamepadCustomProfile &p = GamepadController::get_instance().get_active_profile();
+	if (!p.is_custom) {
+		GamepadCustomProfile customP = GamepadController::create_default_xbox_profile();
+		customP.name = "Controle Personalizado";
+		GamepadController::get_instance().add_or_update_profile(customP);
+		GamepadController::get_instance().set_active_profile(customP.name);
+		populateProfiles();
+	}
+
+	p.bindings[actionInt] = InputBinding();
+	updateRebindUI();
+	if (lblRebindStatus) {
+		lblRebindStatus->setText(QString("Mapeamento de [%1] removido.")
+		                         .arg(rebindRows[actionInt].lblAction ? rebindRows[actionInt].lblAction->text() : ""));
+	}
 }
 
 static void save_load_gamepad_dock(obs_data_t *save_data, bool saving, void *)

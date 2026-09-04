@@ -25,6 +25,8 @@ public:
 	void save_properties(obs_data_t *props);
 	void load_properties(obs_data_t *props);
 	void populateDevices();
+	void populateProfiles();
+	void updateRebindUI();
 
 private slots:
 	void onTimerUpdate();
@@ -38,6 +40,17 @@ private slots:
 	void onMaxSpeedChanged(int val);
 	void onZoomSpeedChanged(int val);
 	void onDeadzoneChanged(int val);
+
+	// Mapeamento e Perfis Slots
+	void onProfileSelected(int index);
+	void onNewProfileClicked();
+	void onSaveProfileClicked();
+	void onDeleteProfileClicked();
+	void onResetXboxProfileClicked();
+	void onResetPlaystationProfileClicked();
+	void onStartWizardClicked();
+	void onRebindButtonClicked(int actionInt);
+	void onClearBindingClicked(int actionInt);
 
 private:
 	QTimer *pollTimer;
@@ -78,10 +91,33 @@ private:
 	QComboBox *combo_rt_dpad_left;
 	QComboBox *combo_rt_dpad_right;
 
-	// Telemetria ao vivo - Aba 2
+	// Mapeamento e Perfis - Nova Aba
+	QComboBox *profileCombo;
+	QPushButton *btnNewProfile;
+	QPushButton *btnSaveProfile;
+	QPushButton *btnDeleteProfile;
+	QPushButton *btnResetXbox;
+	QPushButton *btnResetPS;
+	QPushButton *btnWizard;
+	QLabel *lblRebindStatus;
+
+	struct RebindRowWidgets {
+		QLabel *lblAction;
+		QLabel *lblCurrentBind;
+		QPushButton *btnMap;
+		QPushButton *btnClear;
+	};
+	std::vector<RebindRowWidgets> rebindRows;
+
+	int wizardStepIndex;
+	bool isWizardActive;
+	void advanceWizard();
+
+	// Telemetria ao vivo - Aba Teste (16 botões completos + Sniffer Bruto)
 	QLabel *stickLeftLabel;
 	QProgressBar *stickLeftXBar;
 	QProgressBar *stickLeftYBar;
+	QProgressBar *stickRightYBar;
 	QProgressBar *triggerLeftBar;
 	QProgressBar *triggerRightBar;
 
@@ -93,8 +129,16 @@ private:
 	QLabel *lbl_btn_rb;
 	QLabel *lbl_btn_lt;
 	QLabel *lbl_btn_rt;
-	QLabel *lbl_dpad;
+	QLabel *lbl_btn_start;
+	QLabel *lbl_btn_back;
+	QLabel *lbl_btn_thumb_l;
+	QLabel *lbl_btn_thumb_r;
+	QLabel *lbl_dpad_up;
+	QLabel *lbl_dpad_down;
+	QLabel *lbl_dpad_left;
+	QLabel *lbl_dpad_right;
 	QLabel *lbl_mode;
+	QLabel *lblRawInput;
 
 	void populateScenes();
 };

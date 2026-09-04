@@ -11,7 +11,6 @@
 #include "face-tracker-dock.hpp"
 #include "face-tracker-widget.hpp"
 #include "face-tracker-dock-internal.hpp"
-#include "gamepad-dock.hpp"
 
 #define SAVE_DATA_NAME PLUGIN_NAME "-dock"
 #define OBJ_NAME_SUFFIX "_ft_dock"
@@ -598,13 +597,10 @@ void ft_docks_init()
 		obs_data_release(props);
 	};
 	QAction::connect(action, &QAction::triggered, cb);
-
-	gamepad_dock_init();
 }
 
 void ft_docks_release()
 {
-	gamepad_dock_release();
 	delete docks;
 	docks = NULL;
 }

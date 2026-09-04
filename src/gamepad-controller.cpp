@@ -20,6 +20,20 @@ static SDL_GameController *s_current_controller = nullptr;
 static SDL_Joystick *s_current_joystick = nullptr;
 static int s_current_opened_index = -1;
 
+// Base de dados comunitária para controles populares no Windows (Bluetooth / DirectInput)
+static const char *s_builtin_sdl_mappings[] = {
+	// Xbox Wireless Controller Bluetooth (Windows)
+	"030000005e040000120b000000007801,Xbox Wireless Controller,a:b0,b:b1,back:b10,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b6,leftstick:b13,lefttrigger:a5,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b14,righttrigger:a4,rightx:a2,righty:a3,start:b11,x:b2,y:b3,platform:Windows,",
+	"030000005e040000130b000000007801,Xbox Series X Controller,a:b0,b:b1,back:b10,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b6,leftstick:b13,lefttrigger:a5,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b14,righttrigger:a4,rightx:a2,righty:a3,start:b11,x:b2,y:b3,platform:Windows,",
+	"030000005e040000200b000000007801,Xbox Wireless Controller,a:b0,b:b1,back:b10,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b6,leftstick:b13,lefttrigger:a5,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b14,righttrigger:a4,rightx:a2,righty:a3,start:b11,x:b2,y:b3,platform:Windows,",
+	"030000005e040000e002000000007801,Xbox Wireless Controller,a:b0,b:b1,back:b6,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b10,leftshoulder:b4,leftstick:b8,lefttrigger:a2,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b9,righttrigger:a5,rightx:a3,righty:a4,start:b7,x:b2,y:b3,platform:Windows,",
+	"030000005e040000fd02000000007801,Xbox One Controller,a:b0,b:b1,back:b6,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b10,leftshoulder:b4,leftstick:b8,lefttrigger:a2,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b9,righttrigger:a5,rightx:a3,righty:a4,start:b7,x:b2,y:b3,platform:Windows,",
+	// PS4 / PS5 DualShock / DualSense
+	"030000004c050000c405000000007801,PS4 Controller,a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b4,leftstick:b10,lefttrigger:a3,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b11,righttrigger:a4,rightx:a2,righty:a5,start:b9,x:b0,y:b3,platform:Windows,",
+	"030000004c050000e60c000000007801,PS5 Controller,a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b4,leftstick:b10,lefttrigger:a3,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b11,righttrigger:a4,rightx:a2,righty:a5,start:b9,x:b0,y:b3,platform:Windows,",
+	nullptr
+};
+
 static void ensure_sdl_init()
 {
 	if (!s_sdl_initialized) {
@@ -27,7 +41,10 @@ static void ensure_sdl_init()
 		SDL_SetHint(SDL_HINT_AUTO_UPDATE_JOYSTICKS, "1");
 		if (SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK) == 0) {
 			s_sdl_initialized = true;
-			blog(LOG_INFO, "[Gamepad SDL2] Subsystem inicializado com sucesso.");
+			for (int i = 0; s_builtin_sdl_mappings[i] != nullptr; i++) {
+				SDL_GameControllerAddMapping(s_builtin_sdl_mappings[i]);
+			}
+			blog(LOG_INFO, "[Gamepad SDL2] Subsystem inicializado e base de dados de mapeamento carregada.");
 		} else {
 			blog(LOG_ERROR, "[Gamepad SDL2] Erro ao inicializar SDL: %s", SDL_GetError());
 		}
@@ -68,10 +85,19 @@ GamepadController::GamepadController()
 	  max_speed(1.0f),
 	  zoom_speed_mult(0.8f),
 	  selected_device_id("auto"),
-	  active_device_name("")
+	  active_device_name(""),
+	  active_device_guid(""),
+	  active_profile_name("⚡ Automático (Padrão)"),
+	  is_listening_input(false),
+	  listening_action(VirtualAction::BtnA),
+	  last_raw_input_desc("Nenhum")
 {
 	scene_config.cut_on_lb = true;
 	scene_config.trans_on_lt = true;
+
+	profiles.push_back(create_auto_profile());
+	profiles.push_back(create_default_xbox_profile());
+	profiles.push_back(create_default_playstation_profile());
 
 	memset(&last_state, 0, sizeof(last_state));
 	ensure_sdl_init();
@@ -285,6 +311,7 @@ std::vector<ControllerDeviceInfo> GamepadController::get_available_devices()
 	ControllerDeviceInfo autoDev;
 	autoDev.id = "auto";
 	autoDev.name = "⚡ Automático (Primeiro Ativo)";
+	autoDev.guid = "";
 	autoDev.is_gamecontroller = true;
 	autoDev.index = -1;
 	list.push_back(autoDev);
@@ -310,8 +337,13 @@ std::vector<ControllerDeviceInfo> GamepadController::get_available_devices()
 		if (!name || !*name) {
 			name = "Dispositivo de Jogo";
 		}
-
 		dev.name = name;
+
+		char guidStr[64] = {0};
+		SDL_JoystickGUID guid = SDL_JoystickGetDeviceGUID(i);
+		SDL_JoystickGetGUIDString(guid, guidStr, sizeof(guidStr));
+		dev.guid = guidStr;
+
 		list.push_back(dev);
 	}
 
@@ -323,6 +355,7 @@ bool GamepadController::poll_state(GamepadState &state)
 	memset(&state, 0, sizeof(GamepadState));
 	state.active_camera_index = active_camera;
 	state.manual_active = is_manual_override;
+	state.last_raw_input_desc = last_raw_input_desc;
 
 	ensure_sdl_init();
 	if (!s_sdl_initialized)
@@ -336,6 +369,7 @@ bool GamepadController::poll_state(GamepadState &state)
 		close_current_device();
 		state.connected = false;
 		active_device_name = "";
+		active_device_guid = "";
 		last_state = state;
 		return false;
 	}
@@ -354,6 +388,7 @@ bool GamepadController::poll_state(GamepadState &state)
 		close_current_device();
 		state.connected = false;
 		active_device_name = "";
+		active_device_guid = "";
 		last_state = state;
 		return false;
 	}
@@ -369,7 +404,185 @@ bool GamepadController::poll_state(GamepadState &state)
 		s_current_opened_index = target_index;
 	}
 
-	// 1. VIA SDL_GameController (XInput, PS4, PS5, Switch, GameSir, etc.)
+	SDL_Joystick *joy = s_current_controller ? SDL_GameControllerGetJoystick(s_current_controller) : s_current_joystick;
+	if (joy) {
+		char guidStr[64] = {0};
+		SDL_JoystickGUID guid = SDL_JoystickGetGUID(joy);
+		SDL_JoystickGetGUIDString(guid, guidStr, sizeof(guidStr));
+		active_device_guid = guidStr;
+	}
+
+	// -------------------------------------------------------------
+	// MODO DE ESCUTA (REBIND / WIZARD DE EMULADOR)
+	// -------------------------------------------------------------
+	if (is_listening_input && joy) {
+		state.connected = true;
+
+		// 1. Verifica botões físicos
+		int numBtns = SDL_JoystickNumButtons(joy);
+		for (int b = 0; b < numBtns; b++) {
+			if (SDL_JoystickGetButton(joy, b) != 0) {
+				InputBinding newBind(BindingType::SdlButton, b, 0, "Botão " + std::to_string(b));
+				last_raw_input_desc = "Botão " + std::to_string(b);
+				state.last_raw_input_desc = last_raw_input_desc;
+				if (on_bound_callback) {
+					auto cb = on_bound_callback;
+					VirtualAction act = listening_action;
+					is_listening_input = false;
+					on_bound_callback = nullptr;
+					cb(act, newBind);
+				}
+				last_state = state;
+				return true;
+			}
+		}
+
+		// 2. Verifica D-Pad / Hats
+		int numHats = SDL_JoystickNumHats(joy);
+		for (int h = 0; h < numHats; h++) {
+			Uint8 hat = SDL_JoystickGetHat(joy, h);
+			if (hat != SDL_HAT_CENTERED) {
+				int dir = 0;
+				std::string dirName = "";
+				if (hat & SDL_HAT_UP) { dir = SDL_HAT_UP; dirName = "Cima"; }
+				else if (hat & SDL_HAT_DOWN) { dir = SDL_HAT_DOWN; dirName = "Baixo"; }
+				else if (hat & SDL_HAT_LEFT) { dir = SDL_HAT_LEFT; dirName = "Esquerda"; }
+				else if (hat & SDL_HAT_RIGHT) { dir = SDL_HAT_RIGHT; dirName = "Direita"; }
+				if (dir != 0) {
+					InputBinding newBind(BindingType::SdlHat, h, dir, "D-Pad " + dirName);
+					last_raw_input_desc = "Hat " + std::to_string(h) + " (" + dirName + ")";
+					state.last_raw_input_desc = last_raw_input_desc;
+					if (on_bound_callback) {
+						auto cb = on_bound_callback;
+						VirtualAction act = listening_action;
+						is_listening_input = false;
+						on_bound_callback = nullptr;
+						cb(act, newBind);
+					}
+					last_state = state;
+					return true;
+				}
+			}
+		}
+
+		// 3. Verifica Eixos (deslocamento forte para mapear gatilhos como botões)
+		int numAxes = SDL_JoystickNumAxes(joy);
+		for (int a = 0; a < numAxes; a++) {
+			int16_t val = SDL_JoystickGetAxis(joy, a);
+			if (val > 24000 || val < -24000) {
+				int sign = (val > 0) ? 1 : -1;
+				std::string axisDesc = "Eixo " + std::to_string(a) + (sign > 0 ? " (+)" : " (-)");
+				InputBinding newBind(BindingType::SdlAxis, a, sign, axisDesc);
+				last_raw_input_desc = axisDesc;
+				state.last_raw_input_desc = last_raw_input_desc;
+				if (on_bound_callback) {
+					auto cb = on_bound_callback;
+					VirtualAction act = listening_action;
+					is_listening_input = false;
+					on_bound_callback = nullptr;
+					cb(act, newBind);
+				}
+				last_state = state;
+				return true;
+			}
+		}
+
+		state.last_raw_input_desc = "⏳ Aguardando pressionar botão...";
+		last_state = state;
+		return true;
+	}
+
+	// Sniffer de entrada bruta (exibição em tempo real no dock de teste)
+	if (joy) {
+		int numBtns = SDL_JoystickNumButtons(joy);
+		for (int b = 0; b < numBtns; b++) {
+			if (SDL_JoystickGetButton(joy, b) != 0) {
+				last_raw_input_desc = "Botão Físico " + std::to_string(b);
+				break;
+			}
+		}
+		int numHats = SDL_JoystickNumHats(joy);
+		for (int h = 0; h < numHats; h++) {
+			Uint8 hat = SDL_JoystickGetHat(joy, h);
+			if (hat != SDL_HAT_CENTERED) {
+				std::string dirName = "";
+				if (hat & SDL_HAT_UP) dirName = "Cima";
+				else if (hat & SDL_HAT_DOWN) dirName = "Baixo";
+				else if (hat & SDL_HAT_LEFT) dirName = "Esquerda";
+				else if (hat & SDL_HAT_RIGHT) dirName = "Direita";
+				last_raw_input_desc = "D-Pad " + dirName;
+				break;
+			}
+		}
+	}
+	state.last_raw_input_desc = last_raw_input_desc;
+
+	// -------------------------------------------------------------
+	// LEITURA COM PERFIL PERSONALIZADO (CUSTOM REMAP)
+	// -------------------------------------------------------------
+	GamepadCustomProfile &prof = get_active_profile();
+	if (prof.is_custom && joy) {
+		state.connected = true;
+		const char *jname = SDL_JoystickName(joy);
+		active_device_name = (jname && *jname) ? jname : "Controle Personalizado";
+
+		auto read_bind = [&](VirtualAction act) -> bool {
+			const InputBinding &b = prof.bindings[(int)act];
+			if (b.type == BindingType::SdlButton && b.index >= 0) {
+				return SDL_JoystickGetButton(joy, b.index) != 0;
+			} else if (b.type == BindingType::SdlHat && b.index >= 0) {
+				return (SDL_JoystickGetHat(joy, b.index) & b.param) != 0;
+			} else if (b.type == BindingType::SdlAxis && b.index >= 0) {
+				int16_t ax = SDL_JoystickGetAxis(joy, b.index);
+				return (b.param > 0) ? (ax > 16000) : (ax < -16000);
+			}
+			return false;
+		};
+
+		state.btn_a = read_bind(VirtualAction::BtnA);
+		state.btn_b = read_bind(VirtualAction::BtnB);
+		state.btn_x = read_bind(VirtualAction::BtnX);
+		state.btn_y = read_bind(VirtualAction::BtnY);
+		state.btn_lb = read_bind(VirtualAction::BtnLB);
+		state.btn_rb = read_bind(VirtualAction::BtnRB);
+		state.btn_lt = read_bind(VirtualAction::BtnLT);
+		state.btn_rt = read_bind(VirtualAction::BtnRT);
+		state.dpad_up = read_bind(VirtualAction::DpadUp);
+		state.dpad_down = read_bind(VirtualAction::DpadDown);
+		state.dpad_left = read_bind(VirtualAction::DpadLeft);
+		state.dpad_right = read_bind(VirtualAction::DpadRight);
+		state.btn_start = read_bind(VirtualAction::BtnStart);
+		state.btn_back = read_bind(VirtualAction::BtnBack);
+		state.btn_thumb_l = read_bind(VirtualAction::BtnThumbL);
+		state.btn_thumb_r = read_bind(VirtualAction::BtnThumbR);
+
+		int numAxes = SDL_JoystickNumAxes(joy);
+		int pan_idx = prof.axis_pan.axis_index >= 0 ? prof.axis_pan.axis_index : 0;
+		int tilt_idx = prof.axis_tilt.axis_index >= 0 ? prof.axis_tilt.axis_index : 1;
+		int zoom_idx = prof.axis_zoom.axis_index >= 0 ? prof.axis_zoom.axis_index : 3;
+
+		float raw_lx = (pan_idx < numAxes) ? (float)SDL_JoystickGetAxis(joy, pan_idx) / 32767.0f : 0.0f;
+		float raw_ly = (tilt_idx < numAxes) ? -(float)SDL_JoystickGetAxis(joy, tilt_idx) / 32767.0f : 0.0f;
+		if (prof.axis_pan.inverted) raw_lx = -raw_lx;
+		if (prof.axis_tilt.inverted) raw_ly = -raw_ly;
+
+		state.pan_axis = apply_progressive_curve(raw_lx, deadzone, curve_gamma, min_speed, max_speed * sensitivity);
+		state.tilt_axis = apply_progressive_curve(raw_ly, deadzone, curve_gamma, min_speed, max_speed * sensitivity);
+
+		float raw_ry = (zoom_idx < numAxes) ? -(float)SDL_JoystickGetAxis(joy, zoom_idx) / 32767.0f : 0.0f;
+		if (prof.axis_zoom.inverted) raw_ry = -raw_ry;
+		state.zoom_axis = apply_progressive_curve(raw_ry, deadzone, curve_gamma, min_speed, max_speed * zoom_speed_mult * sensitivity);
+
+		state.trigger_left = state.btn_lt ? 1.0f : 0.0f;
+		state.trigger_right = state.btn_rt ? 1.0f : 0.0f;
+
+		last_state = state;
+		return true;
+	}
+
+	// -------------------------------------------------------------
+	// LEITURA PADRÃO AUTOMÁTICA (SDL_GameController / XInput)
+	// -------------------------------------------------------------
 	if (s_current_controller && SDL_GameControllerGetAttached(s_current_controller)) {
 		state.connected = true;
 		const char *cname = SDL_GameControllerName(s_current_controller);
@@ -391,8 +604,7 @@ bool GamepadController::poll_state(GamepadState &state)
 		state.trigger_left = std::clamp((float)trig_l / 32767.0f, 0.0f, 1.0f);
 		state.trigger_right = std::clamp((float)trig_r / 32767.0f, 0.0f, 1.0f);
 
-		// Zoom no Analógico Direito (Stick Direito Y):
-		// Empurrar para cima = Zoom In (+) progressivo | Puxar para baixo = Zoom Out (-) progressivo
+		// Zoom no Analógico Direito (Stick Direito Y)
 		int16_t axis_ry = SDL_GameControllerGetAxis(s_current_controller, SDL_CONTROLLER_AXIS_RIGHTY);
 		float raw_ry = -(float)axis_ry / 32767.0f;
 		raw_ry = std::clamp(raw_ry, -1.0f, 1.0f);
@@ -419,7 +631,7 @@ bool GamepadController::poll_state(GamepadState &state)
 		return true;
 	}
 
-	// 2. FALLBACK VIA SDL_Joystick
+	// Fallback via SDL_Joystick
 	if (s_current_joystick && SDL_JoystickGetAttached(s_current_joystick)) {
 		state.connected = true;
 		const char *jname = SDL_JoystickName(s_current_joystick);
@@ -472,7 +684,55 @@ bool GamepadController::poll_state(GamepadState &state)
 
 	state.connected = false;
 	active_device_name = "";
+	active_device_guid = "";
 	last_state = state;
+	return false;
+}
+
+bool GamepadController::is_ptz_available()
+{
+	proc_handler_t *main_ph = obs_get_proc_handler();
+	if (!main_ph)
+		return false;
+
+	// 1. Verifica se o plugin dedicado obs-ptz-tracker está instalado
+	calldata_t cd;
+	calldata_init(&cd);
+	bool is_installed = false;
+	if (proc_handler_call(main_ph, "ptz_tracker_is_installed", &cd)) {
+		calldata_get_bool(&cd, "installed", &is_installed);
+		calldata_free(&cd);
+		if (is_installed)
+			return true;
+	} else {
+		calldata_free(&cd);
+	}
+
+	// 2. Verifica se o plugin obs-ptz oficial está registrado
+	calldata_init(&cd);
+	proc_handler_t *ptz_ph = nullptr;
+	if (proc_handler_call(main_ph, "ptz_get_proc_handler", &cd)) {
+		calldata_get_ptr(&cd, "return", &ptz_ph);
+		calldata_free(&cd);
+		if (ptz_ph != nullptr)
+			return true;
+	} else {
+		calldata_free(&cd);
+	}
+
+	// 3. Verifica se os procedimentos de movimento PTZ existem
+	calldata_init(&cd);
+	calldata_set_int(&cd, "device_id", 0);
+	calldata_set_float(&cd, "pan", 0.0f);
+	calldata_set_float(&cd, "tilt", 0.0f);
+	calldata_set_float(&cd, "zoom", 0.0f);
+	if (proc_handler_call(main_ph, "ptz_move_continuous", &cd) ||
+	    proc_handler_call(main_ph, "ptz_pantilt", &cd)) {
+		calldata_free(&cd);
+		return true;
+	}
+	calldata_free(&cd);
+
 	return false;
 }
 
@@ -495,6 +755,9 @@ static proc_handler_t *get_ptz_proc_handler()
 
 static void send_ptz_move(int device_id, float pan, float tilt, float zoom)
 {
+	if (!GamepadController::get_instance().is_ptz_available())
+		return;
+
 	proc_handler_t *ph = get_ptz_proc_handler();
 	if (!ph)
 		return;
@@ -514,6 +777,9 @@ static void send_ptz_move(int device_id, float pan, float tilt, float zoom)
 
 static void send_ptz_stop(int device_id)
 {
+	if (!GamepadController::get_instance().is_ptz_available())
+		return;
+
 	proc_handler_t *ph = get_ptz_proc_handler();
 	if (!ph)
 		return;
@@ -527,6 +793,11 @@ static void send_ptz_stop(int device_id)
 
 static void recall_ptz_preset(int camera_idx, int preset_num)
 {
+	if (!GamepadController::get_instance().is_ptz_available()) {
+		blog(LOG_WARNING, "[Gamepad] Preset %d ignorado: o plugin PTZ precisa estar instalado!", preset_num);
+		return;
+	}
+
 	blog(LOG_INFO, "[Gamepad PTZ] Chamando preset %d no dispositivo PTZ %d", preset_num, camera_idx);
 	proc_handler_t *ph = get_ptz_proc_handler();
 	if (!ph)
@@ -746,3 +1017,254 @@ bool GamepadController::tick(float dt, GamepadState &state)
 
 	return true;
 }
+
+void GamepadController::start_listening(VirtualAction action, OnInputBoundCallback cb)
+{
+	listening_action = action;
+	on_bound_callback = cb;
+	is_listening_input = true;
+	blog(LOG_INFO, "[Gamepad Remap] Aguardando entrada para a ação %d (%s)...",
+	     (int)action, get_action_name(action));
+}
+
+void GamepadController::cancel_listening()
+{
+	is_listening_input = false;
+	on_bound_callback = nullptr;
+}
+
+GamepadCustomProfile *GamepadController::find_profile(const std::string &name)
+{
+	for (auto &p : profiles) {
+		if (p.name == name)
+			return &p;
+	}
+	return nullptr;
+}
+
+GamepadCustomProfile &GamepadController::get_active_profile()
+{
+	for (auto &p : profiles) {
+		if (p.name == active_profile_name)
+			return p;
+	}
+	if (!profiles.empty())
+		return profiles[0];
+
+	static GamepadCustomProfile fallback = create_auto_profile();
+	return fallback;
+}
+
+void GamepadController::set_active_profile(const std::string &name)
+{
+	active_profile_name = name;
+	blog(LOG_INFO, "[Gamepad Profile] Perfil ativo alterado para: %s", name.c_str());
+}
+
+void GamepadController::add_or_update_profile(const GamepadCustomProfile &prof)
+{
+	for (auto &p : profiles) {
+		if (p.name == prof.name) {
+			p = prof;
+			return;
+		}
+	}
+	profiles.push_back(prof);
+}
+
+void GamepadController::delete_profile(const std::string &name)
+{
+	if (name == "⚡ Automático (Padrão)" || name == "Xbox Controller (Padrão)" || name == "PlayStation (Padrão)")
+		return;
+
+	for (auto it = profiles.begin(); it != profiles.end(); ++it) {
+		if (it->name == name) {
+			profiles.erase(it);
+			if (active_profile_name == name) {
+				active_profile_name = "⚡ Automático (Padrão)";
+			}
+			return;
+		}
+	}
+}
+
+GamepadCustomProfile GamepadController::create_auto_profile()
+{
+	GamepadCustomProfile p;
+	p.name = "⚡ Automático (Padrão)";
+	p.device_guid = "";
+	p.is_custom = false;
+	return p;
+}
+
+GamepadCustomProfile GamepadController::create_default_xbox_profile()
+{
+	GamepadCustomProfile p;
+	p.name = "Xbox Controller (Padrão)";
+	p.device_guid = "";
+	p.is_custom = true;
+
+	p.bindings[(int)VirtualAction::BtnA] = {BindingType::SdlButton, 0, 0, "Botão 0 (A)"};
+	p.bindings[(int)VirtualAction::BtnB] = {BindingType::SdlButton, 1, 0, "Botão 1 (B)"};
+	p.bindings[(int)VirtualAction::BtnX] = {BindingType::SdlButton, 2, 0, "Botão 2 (X)"};
+	p.bindings[(int)VirtualAction::BtnY] = {BindingType::SdlButton, 3, 0, "Botão 3 (Y)"};
+	p.bindings[(int)VirtualAction::BtnLB] = {BindingType::SdlButton, 4, 0, "Botão 4 (LB)"};
+	p.bindings[(int)VirtualAction::BtnRB] = {BindingType::SdlButton, 5, 0, "Botão 5 (RB)"};
+	p.bindings[(int)VirtualAction::BtnBack] = {BindingType::SdlButton, 6, 0, "Botão 6 (View/Back)"};
+	p.bindings[(int)VirtualAction::BtnStart] = {BindingType::SdlButton, 7, 0, "Botão 7 (Menu/Start)"};
+	p.bindings[(int)VirtualAction::BtnThumbL] = {BindingType::SdlButton, 8, 0, "Botão 8 (L3/LS)"};
+	p.bindings[(int)VirtualAction::BtnThumbR] = {BindingType::SdlButton, 9, 0, "Botão 9 (R3/RS)"};
+
+	p.bindings[(int)VirtualAction::DpadUp] = {BindingType::SdlHat, 0, SDL_HAT_UP, "D-Pad Cima (Hat 0)"};
+	p.bindings[(int)VirtualAction::DpadDown] = {BindingType::SdlHat, 0, SDL_HAT_DOWN, "D-Pad Baixo (Hat 0)"};
+	p.bindings[(int)VirtualAction::DpadLeft] = {BindingType::SdlHat, 0, SDL_HAT_LEFT, "D-Pad Esquerda (Hat 0)"};
+	p.bindings[(int)VirtualAction::DpadRight] = {BindingType::SdlHat, 0, SDL_HAT_RIGHT, "D-Pad Direita (Hat 0)"};
+
+	p.bindings[(int)VirtualAction::BtnLT] = {BindingType::SdlAxis, 2, 1, "Eixo 2 (+) [LT]"};
+	p.bindings[(int)VirtualAction::BtnRT] = {BindingType::SdlAxis, 5, 1, "Eixo 5 (+) [RT]"};
+
+	p.axis_pan = {0, false, "Analógico Esquerdo X"};
+	p.axis_tilt = {1, false, "Analógico Esquerdo Y"};
+	p.axis_zoom = {3, false, "Analógico Direito Y"};
+
+	return p;
+}
+
+GamepadCustomProfile GamepadController::create_default_playstation_profile()
+{
+	GamepadCustomProfile p;
+	p.name = "PlayStation (Padrão)";
+	p.device_guid = "";
+	p.is_custom = true;
+
+	p.bindings[(int)VirtualAction::BtnA] = {BindingType::SdlButton, 1, 0, "Botão 1 (X)"};
+	p.bindings[(int)VirtualAction::BtnB] = {BindingType::SdlButton, 2, 0, "Botão 2 (Círculo)"};
+	p.bindings[(int)VirtualAction::BtnX] = {BindingType::SdlButton, 0, 0, "Botão 0 (Quadrado)"};
+	p.bindings[(int)VirtualAction::BtnY] = {BindingType::SdlButton, 3, 0, "Botão 3 (Triângulo)"};
+	p.bindings[(int)VirtualAction::BtnLB] = {BindingType::SdlButton, 4, 0, "Botão 4 (L1)"};
+	p.bindings[(int)VirtualAction::BtnRB] = {BindingType::SdlButton, 5, 0, "Botão 5 (R1)"};
+	p.bindings[(int)VirtualAction::BtnBack] = {BindingType::SdlButton, 8, 0, "Botão 8 (Share)"};
+	p.bindings[(int)VirtualAction::BtnStart] = {BindingType::SdlButton, 9, 0, "Botão 9 (Options)"};
+	p.bindings[(int)VirtualAction::BtnThumbL] = {BindingType::SdlButton, 10, 0, "Botão 10 (L3)"};
+	p.bindings[(int)VirtualAction::BtnThumbR] = {BindingType::SdlButton, 11, 0, "Botão 11 (R3)"};
+
+	p.bindings[(int)VirtualAction::DpadUp] = {BindingType::SdlHat, 0, SDL_HAT_UP, "D-Pad Cima (Hat 0)"};
+	p.bindings[(int)VirtualAction::DpadDown] = {BindingType::SdlHat, 0, SDL_HAT_DOWN, "D-Pad Baixo (Hat 0)"};
+	p.bindings[(int)VirtualAction::DpadLeft] = {BindingType::SdlHat, 0, SDL_HAT_LEFT, "D-Pad Esquerda (Hat 0)"};
+	p.bindings[(int)VirtualAction::DpadRight] = {BindingType::SdlHat, 0, SDL_HAT_RIGHT, "D-Pad Direita (Hat 0)"};
+
+	p.bindings[(int)VirtualAction::BtnLT] = {BindingType::SdlAxis, 3, 1, "Eixo 3 (+) [L2]"};
+	p.bindings[(int)VirtualAction::BtnRT] = {BindingType::SdlAxis, 4, 1, "Eixo 4 (+) [R2]"};
+
+	p.axis_pan = {0, false, "Analógico Esquerdo X"};
+	p.axis_tilt = {1, false, "Analógico Esquerdo Y"};
+	p.axis_zoom = {2, false, "Analógico Direito Y"};
+
+	return p;
+}
+
+void GamepadController::save_profiles(obs_data_t *props)
+{
+	if (!props) return;
+
+	obs_data_set_string(props, "gamepad_active_profile", active_profile_name.c_str());
+	obs_data_set_string(props, "gamepad_selected_device", selected_device_id.c_str());
+
+	obs_data_array_t *arr = obs_data_array_create();
+	for (const auto &p : profiles) {
+		obs_data_t *p_data = obs_data_create();
+		obs_data_set_string(p_data, "name", p.name.c_str());
+		obs_data_set_string(p_data, "guid", p.device_guid.c_str());
+		obs_data_set_bool(p_data, "is_custom", p.is_custom);
+
+		obs_data_array_t *bind_arr = obs_data_array_create();
+		for (int i = 0; i < (int)VirtualAction::Count; i++) {
+			obs_data_t *b_data = obs_data_create();
+			const auto &b = p.bindings[i];
+			obs_data_set_int(b_data, "action", i);
+			obs_data_set_int(b_data, "type", (int)b.type);
+			obs_data_set_int(b_data, "index", b.index);
+			obs_data_set_int(b_data, "param", b.param);
+			obs_data_set_string(b_data, "desc", b.display_name.c_str());
+			obs_data_array_push_back(bind_arr, b_data);
+			obs_data_release(b_data);
+		}
+		obs_data_set_array(p_data, "bindings", bind_arr);
+		obs_data_array_release(bind_arr);
+
+		obs_data_set_int(p_data, "axis_pan_idx", p.axis_pan.axis_index);
+		obs_data_set_bool(p_data, "axis_pan_inv", p.axis_pan.inverted);
+		obs_data_set_int(p_data, "axis_tilt_idx", p.axis_tilt.axis_index);
+		obs_data_set_bool(p_data, "axis_tilt_inv", p.axis_tilt.inverted);
+		obs_data_set_int(p_data, "axis_zoom_idx", p.axis_zoom.axis_index);
+		obs_data_set_bool(p_data, "axis_zoom_inv", p.axis_zoom.inverted);
+
+		obs_data_array_push_back(arr, p_data);
+		obs_data_release(p_data);
+	}
+
+	obs_data_set_array(props, "gamepad_custom_profiles", arr);
+	obs_data_array_release(arr);
+}
+
+void GamepadController::load_profiles(obs_data_t *props)
+{
+	if (!props) return;
+
+	const char *act_prof = obs_data_get_string(props, "gamepad_active_profile");
+	if (act_prof && *act_prof) {
+		active_profile_name = act_prof;
+	}
+
+	const char *sel_dev = obs_data_get_string(props, "gamepad_selected_device");
+	if (sel_dev && *sel_dev) {
+		selected_device_id = sel_dev;
+	}
+
+	obs_data_array_t *arr = obs_data_get_array(props, "gamepad_custom_profiles");
+	if (arr) {
+		size_t count = obs_data_array_count(arr);
+		for (size_t i = 0; i < count; i++) {
+			obs_data_t *p_data = obs_data_array_item(arr, i);
+			if (!p_data) continue;
+
+			GamepadCustomProfile p;
+			p.name = obs_data_get_string(p_data, "name");
+			p.device_guid = obs_data_get_string(p_data, "guid");
+			p.is_custom = obs_data_get_bool(p_data, "is_custom");
+
+			obs_data_array_t *bind_arr = obs_data_get_array(p_data, "bindings");
+			if (bind_arr) {
+				size_t b_count = obs_data_array_count(bind_arr);
+				for (size_t j = 0; j < b_count; j++) {
+					obs_data_t *b_data = obs_data_array_item(bind_arr, j);
+					if (!b_data) continue;
+
+					int act = (int)obs_data_get_int(b_data, "action");
+					if (act >= 0 && act < (int)VirtualAction::Count) {
+						p.bindings[act].type = (BindingType)obs_data_get_int(b_data, "type");
+						p.bindings[act].index = (int)obs_data_get_int(b_data, "index");
+						p.bindings[act].param = (int)obs_data_get_int(b_data, "param");
+						const char *dsc = obs_data_get_string(b_data, "desc");
+						p.bindings[act].display_name = dsc ? dsc : "";
+					}
+					obs_data_release(b_data);
+				}
+				obs_data_array_release(bind_arr);
+			}
+
+			p.axis_pan.axis_index = (int)obs_data_get_int(p_data, "axis_pan_idx");
+			p.axis_pan.inverted = obs_data_get_bool(p_data, "axis_pan_inv");
+			p.axis_tilt.axis_index = (int)obs_data_get_int(p_data, "axis_tilt_idx");
+			p.axis_tilt.inverted = obs_data_get_bool(p_data, "axis_tilt_inv");
+			p.axis_zoom.axis_index = (int)obs_data_get_int(p_data, "axis_zoom_idx");
+			p.axis_zoom.inverted = obs_data_get_bool(p_data, "axis_zoom_inv");
+
+			add_or_update_profile(p);
+			obs_data_release(p_data);
+		}
+		obs_data_array_release(arr);
+	}
+}
+
+

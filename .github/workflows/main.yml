@@ -355,10 +355,12 @@ jobs:
           Copy-Item "temp-obs-ptz\obs-ptz\data\*" "release\data\obs-plugins\obs-ptz\" -Force -Recurse
           Remove-Item obs-ptz.zip, temp-obs-ptz -Recurse -Force
 
-      - name: Package plugin
-        run: ci/windows/package-windows.cmd ${{ matrix.obs }}
+      - name: Package plugins (3 separate ZIPs)
+        shell: pwsh
+        run: ./ci/windows/package-three-plugins.ps1 -ObsVersion ${{ matrix.obs }}
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.artifactName }}-windows-obs${{ matrix.obs }}-${{ matrix.arch }}
-          path: package/*
+          path: package/*.zip
