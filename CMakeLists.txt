@@ -72,7 +72,10 @@ configure_file(
 configure_file(
 	ci/ci_includes.cmd.in
 	ci/ci_includes.generated.cmd
+)
+
 set(PLUGIN_SOURCES
+
 	src/module-main.c
 	src/face-tracker.cpp
 	src/source_list.cc
