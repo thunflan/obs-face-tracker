@@ -24,6 +24,29 @@ enum class VirtualAction {
 	Count
 };
 
+static inline const char *get_action_name(VirtualAction act)
+{
+	switch (act) {
+	case VirtualAction::BtnA: return "Botão A (Preset 1 / Seleção)";
+	case VirtualAction::BtnB: return "Botão B (Preset 2 / Voltar)";
+	case VirtualAction::BtnX: return "Botão X (Preset 3)";
+	case VirtualAction::BtnY: return "Botão Y (Preset 4)";
+	case VirtualAction::BtnLB: return "Bumper LB (Corte Seco)";
+	case VirtualAction::BtnRB: return "Bumper RB (Modificador 1)";
+	case VirtualAction::BtnLT: return "Gatilho LT (Transição)";
+	case VirtualAction::BtnRT: return "Gatilho RT (Modificador 2)";
+	case VirtualAction::DpadUp: return "D-Pad Cima (Cena 1)";
+	case VirtualAction::DpadDown: return "D-Pad Baixo (Cena 2)";
+	case VirtualAction::DpadLeft: return "D-Pad Esquerda (Cena 3)";
+	case VirtualAction::DpadRight: return "D-Pad Direita (Cena 4)";
+	case VirtualAction::BtnStart: return "Menu / Start (Modo Manual/Auto)";
+	case VirtualAction::BtnBack: return "View / Back / Select";
+	case VirtualAction::BtnThumbL: return "Analógico L3 (Clique Esquerdo)";
+	case VirtualAction::BtnThumbR: return "Analógico R3 (Clique Direito)";
+	default: return "Desconhecido";
+	}
+}
+
 enum class BindingType {
 	None = 0,
 	SdlButton,
