@@ -1,4 +1,5 @@
 #include "gamepad-controller.hpp"
+#include <obs-module.h>
 #include <util/platform.h>
 #include <obs-frontend-api.h>
 #include <obs.h>
