@@ -222,10 +222,20 @@ GamepadDock::GamepadDock(QWidget *parent)
 	btnWizard->setStyleSheet("QPushButton { font-weight: bold; padding: 6px 12px; background-color: #238636; color: white; border-radius: 4px; } QPushButton:hover { background-color: #2ea44f; }");
 	connect(btnWizard, &QPushButton::clicked, this, &GamepadDock::onStartWizardClicked);
 
+	btnCancelListen = new QPushButton(obs_module_text("⏹️ Cancelar Escuta"), tabMapping);
+	btnCancelListen->setStyleSheet("QPushButton { font-weight: bold; padding: 6px 12px; background-color: #da3633; color: white; border-radius: 4px; } QPushButton:hover { background-color: #f85149; }");
+	connect(btnCancelListen, &QPushButton::clicked, this, &GamepadDock::onCancelListenClicked);
+
+	btnSkipStep = new QPushButton(obs_module_text("⏭️ Pular Botão"), tabMapping);
+	btnSkipStep->setStyleSheet("QPushButton { font-weight: bold; padding: 6px 12px; background-color: #30363d; color: white; border-radius: 4px; } QPushButton:hover { background-color: #484f58; }");
+	connect(btnSkipStep, &QPushButton::clicked, this, &GamepadDock::onSkipStepClicked);
+
 	lblRebindStatus = new QLabel(obs_module_text("Status: Pronto. Escolha uma ação abaixo ou inicie o assistente."), tabMapping);
 	lblRebindStatus->setStyleSheet("font-size: 11px; color: #58a6ff; font-weight: bold;");
 
 	wizLayout->addWidget(btnWizard);
+	wizLayout->addWidget(btnCancelListen);
+	wizLayout->addWidget(btnSkipStep);
 	wizLayout->addWidget(lblRebindStatus);
 	wizLayout->addStretch();
 	tabMappingLayout->addLayout(wizLayout);
@@ -1102,6 +1112,23 @@ void GamepadDock::advanceWizard()
 		wizardStepIndex++;
 		this->advanceWizard();
 	});
+}
+
+void GamepadDock::onCancelListenClicked()
+{
+	isWizardActive = false;
+	GamepadController::get_instance().cancel_listening();
+	if (lblRebindStatus) {
+		lblRebindStatus->setText(obs_module_text("⏹️ Escuta cancelada."));
+	}
+	updateRebindUI();
+}
+
+void GamepadDock::onSkipStepClicked()
+{
+	if (!isWizardActive) return;
+	wizardStepIndex++;
+	advanceWizard();
 }
 
 void GamepadDock::onRebindButtonClicked(int actionInt)

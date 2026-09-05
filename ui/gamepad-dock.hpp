@@ -49,6 +49,8 @@ private slots:
 	void onResetXboxProfileClicked();
 	void onResetPlaystationProfileClicked();
 	void onStartWizardClicked();
+	void onCancelListenClicked();
+	void onSkipStepClicked();
 	void onRebindButtonClicked(int actionInt);
 	void onClearBindingClicked(int actionInt);
 
@@ -99,6 +101,8 @@ private:
 	QPushButton *btnResetXbox;
 	QPushButton *btnResetPS;
 	QPushButton *btnWizard;
+	QPushButton *btnCancelListen;
+	QPushButton *btnSkipStep;
 	QLabel *lblRebindStatus;
 
 	struct RebindRowWidgets {

@@ -58,12 +58,14 @@ struct InputBinding {
 	BindingType type;
 	int index;
 	int param; // Para Hat: bitmask (1=Up, 2=Right, 4=Down, 8=Left). Para Eixo: +1 ou -1
+	int baseline; // Posição de repouso no momento do mapeamento
 	std::string display_name;
 
-	InputBinding() : type(BindingType::None), index(-1), param(0), display_name("Não Mapeado") {}
-	InputBinding(BindingType t, int idx, int p = 0, const std::string &disp = "")
-		: type(t), index(idx), param(p), display_name(disp) {}
+	InputBinding() : type(BindingType::None), index(-1), param(0), baseline(0), display_name("Não Mapeado") {}
+	InputBinding(BindingType t, int idx, int p = 0, int base = 0, const std::string &disp = "")
+		: type(t), index(idx), param(p), baseline(base), display_name(disp) {}
 };
+
 
 struct AxisBinding {
 	int axis_index;
@@ -190,7 +192,14 @@ private:
 	std::function<void(VirtualAction, const InputBinding &)> on_bound_callback;
 	std::string last_raw_input_desc;
 
+	uint64_t listen_start_time_ns;
+	int16_t listen_baseline_axes[64];
+	bool listen_initial_buttons[128];
+	uint8_t listen_initial_hat;
+	bool listen_released;
+
 public:
+
 	GamepadController();
 	~GamepadController();
 

@@ -41,6 +41,35 @@ static void ensure_sdl_init()
 		SDL_SetHint(SDL_HINT_AUTO_UPDATE_JOYSTICKS, "1");
 		if (SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK) == 0) {
 			s_sdl_initialized = true;
+
+			// 1. Carrega banco comunitário oficial gamecontrollerdb.txt (gabomdq/SDL_GameControllerDB)
+			int loaded = 0;
+			char *db_path = obs_module_file("gamecontrollerdb.txt");
+			if (db_path) {
+				loaded = SDL_GameControllerAddMappingsFromFile(db_path);
+				if (loaded > 0) {
+					blog(LOG_INFO, "[Gamepad SDL2] Carregado %d mapeamentos oficiais de %s", loaded, db_path);
+				}
+				bfree(db_path);
+			}
+
+			// Fallback caso obs_module_file não encontre em tempo de dev/execução direta
+			if (loaded <= 0) {
+				const char *fallbacks[] = {
+					"data/obs-plugins/obs-face-tracker/gamecontrollerdb.txt",
+					"obs-plugins/obs-face-tracker/gamecontrollerdb.txt",
+					"data/gamecontrollerdb.txt",
+					nullptr
+				};
+				for (int f = 0; fallbacks[f] != nullptr && loaded <= 0; f++) {
+					loaded = SDL_GameControllerAddMappingsFromFile(fallbacks[f]);
+					if (loaded > 0) {
+						blog(LOG_INFO, "[Gamepad SDL2] Carregado %d mapeamentos de %s", loaded, fallbacks[f]);
+					}
+				}
+			}
+
+			// 2. Mapeamentos adicionais embutidos
 			for (int i = 0; s_builtin_sdl_mappings[i] != nullptr; i++) {
 				SDL_GameControllerAddMapping(s_builtin_sdl_mappings[i]);
 			}
@@ -413,16 +442,49 @@ bool GamepadController::poll_state(GamepadState &state)
 	}
 
 	// -------------------------------------------------------------
+	// -------------------------------------------------------------
 	// MODO DE ESCUTA (REBIND / WIZARD DE EMULADOR)
 	// -------------------------------------------------------------
 	if (is_listening_input && joy) {
 		state.connected = true;
 
+		uint64_t now_ns = os_gettime_ns();
+		// Debounce de 150ms para evitar captura imediata do clique do mouse
+		if (now_ns - listen_start_time_ns < 150000000ULL) {
+			state.last_raw_input_desc = "⏳ Calibrando repouso...";
+			last_state = state;
+			return true;
+		}
+
+		// Aguarda que botões inicialmente pressionados sejam soltos
+		if (!listen_released) {
+			bool any_initial_held = false;
+			int numBtns = std::min(SDL_JoystickNumButtons(joy), 128);
+			for (int b = 0; b < numBtns; b++) {
+				if (listen_initial_buttons[b] && SDL_JoystickGetButton(joy, b) != 0) {
+					any_initial_held = true;
+					break;
+				}
+			}
+			if (SDL_JoystickNumHats(joy) > 0) {
+				if (listen_initial_hat != SDL_HAT_CENTERED && SDL_JoystickGetHat(joy, 0) == listen_initial_hat) {
+					any_initial_held = true;
+				}
+			}
+			if (!any_initial_held) {
+				listen_released = true;
+			} else {
+				state.last_raw_input_desc = "⏳ Solte todos os botões...";
+				last_state = state;
+				return true;
+			}
+		}
+
 		// 1. Verifica botões físicos
 		int numBtns = SDL_JoystickNumButtons(joy);
 		for (int b = 0; b < numBtns; b++) {
 			if (SDL_JoystickGetButton(joy, b) != 0) {
-				InputBinding newBind(BindingType::SdlButton, b, 0, "Botão " + std::to_string(b));
+				InputBinding newBind(BindingType::SdlButton, b, 0, 0, "Botão " + std::to_string(b));
 				last_raw_input_desc = "Botão " + std::to_string(b);
 				state.last_raw_input_desc = last_raw_input_desc;
 				if (on_bound_callback) {
@@ -449,7 +511,7 @@ bool GamepadController::poll_state(GamepadState &state)
 				else if (hat & SDL_HAT_LEFT) { dir = SDL_HAT_LEFT; dirName = "Esquerda"; }
 				else if (hat & SDL_HAT_RIGHT) { dir = SDL_HAT_RIGHT; dirName = "Direita"; }
 				if (dir != 0) {
-					InputBinding newBind(BindingType::SdlHat, h, dir, "D-Pad " + dirName);
+					InputBinding newBind(BindingType::SdlHat, h, dir, 0, "D-Pad " + dirName);
 					last_raw_input_desc = "Hat " + std::to_string(h) + " (" + dirName + ")";
 					state.last_raw_input_desc = last_raw_input_desc;
 					if (on_bound_callback) {
@@ -465,14 +527,17 @@ bool GamepadController::poll_state(GamepadState &state)
 			}
 		}
 
-		// 3. Verifica Eixos (deslocamento forte para mapear gatilhos como botões)
+		// 3. Verifica Eixos (deslocamento em relação ao repouso inicial)
 		int numAxes = SDL_JoystickNumAxes(joy);
 		for (int a = 0; a < numAxes; a++) {
 			int16_t val = SDL_JoystickGetAxis(joy, a);
-			if (val > 24000 || val < -24000) {
-				int sign = (val > 0) ? 1 : -1;
+			int16_t base = (a < 64) ? listen_baseline_axes[a] : 0;
+			int32_t delta = (int32_t)val - (int32_t)base;
+
+			if (std::abs(delta) > 22000) {
+				int sign = (delta > 0) ? 1 : -1;
 				std::string axisDesc = "Eixo " + std::to_string(a) + (sign > 0 ? " (+)" : " (-)");
-				InputBinding newBind(BindingType::SdlAxis, a, sign, axisDesc);
+				InputBinding newBind(BindingType::SdlAxis, a, sign, base, axisDesc);
 				last_raw_input_desc = axisDesc;
 				state.last_raw_input_desc = last_raw_input_desc;
 				if (on_bound_callback) {
@@ -534,7 +599,8 @@ bool GamepadController::poll_state(GamepadState &state)
 				return (SDL_JoystickGetHat(joy, b.index) & b.param) != 0;
 			} else if (b.type == BindingType::SdlAxis && b.index >= 0) {
 				int16_t ax = SDL_JoystickGetAxis(joy, b.index);
-				return (b.param > 0) ? (ax > 16000) : (ax < -16000);
+				int32_t delta = (int32_t)ax - (int32_t)b.baseline;
+				return (b.param > 0) ? (delta > 16000) : (delta < -16000);
 			}
 			return false;
 		};
@@ -1023,6 +1089,32 @@ void GamepadController::start_listening(VirtualAction action, OnInputBoundCallba
 	listening_action = action;
 	on_bound_callback = cb;
 	is_listening_input = true;
+	listen_start_time_ns = os_gettime_ns();
+	listen_released = false;
+
+	for (int i = 0; i < 64; i++) {
+		listen_baseline_axes[i] = 0;
+	}
+	for (int i = 0; i < 128; i++) {
+		listen_initial_buttons[i] = false;
+	}
+	listen_initial_hat = SDL_HAT_CENTERED;
+
+	SDL_Joystick *joy = s_current_controller ? SDL_GameControllerGetJoystick(s_current_controller) : s_current_joystick;
+	if (joy) {
+		int numAxes = std::min(SDL_JoystickNumAxes(joy), 64);
+		for (int a = 0; a < numAxes; a++) {
+			listen_baseline_axes[a] = SDL_JoystickGetAxis(joy, a);
+		}
+		int numBtns = std::min(SDL_JoystickNumButtons(joy), 128);
+		for (int b = 0; b < numBtns; b++) {
+			listen_initial_buttons[b] = (SDL_JoystickGetButton(joy, b) != 0);
+		}
+		if (SDL_JoystickNumHats(joy) > 0) {
+			listen_initial_hat = SDL_JoystickGetHat(joy, 0);
+		}
+	}
+
 	blog(LOG_INFO, "[Gamepad Remap] Aguardando entrada para a ação %d (%s)...",
 	     (int)action, get_action_name(action));
 }
@@ -1185,6 +1277,7 @@ void GamepadController::save_profiles(obs_data_t *props)
 			obs_data_set_int(b_data, "type", (int)b.type);
 			obs_data_set_int(b_data, "index", b.index);
 			obs_data_set_int(b_data, "param", b.param);
+			obs_data_set_int(b_data, "baseline", b.baseline);
 			obs_data_set_string(b_data, "desc", b.display_name.c_str());
 			obs_data_array_push_back(bind_arr, b_data);
 			obs_data_release(b_data);
@@ -1245,6 +1338,7 @@ void GamepadController::load_profiles(obs_data_t *props)
 						p.bindings[act].type = (BindingType)obs_data_get_int(b_data, "type");
 						p.bindings[act].index = (int)obs_data_get_int(b_data, "index");
 						p.bindings[act].param = (int)obs_data_get_int(b_data, "param");
+						p.bindings[act].baseline = (int)obs_data_get_int(b_data, "baseline");
 						const char *dsc = obs_data_get_string(b_data, "desc");
 						p.bindings[act].display_name = dsc ? dsc : "";
 					}
