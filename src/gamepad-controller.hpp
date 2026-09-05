@@ -62,7 +62,9 @@ struct InputBinding {
 	std::string display_name;
 
 	InputBinding() : type(BindingType::None), index(-1), param(0), baseline(0), display_name("Não Mapeado") {}
-	InputBinding(BindingType t, int idx, int p = 0, int base = 0, const std::string &disp = "")
+	InputBinding(BindingType t, int idx, int p, const std::string &disp)
+		: type(t), index(idx), param(p), baseline(0), display_name(disp) {}
+	InputBinding(BindingType t, int idx, int p, int base, const std::string &disp)
 		: type(t), index(idx), param(p), baseline(base), display_name(disp) {}
 };
 
