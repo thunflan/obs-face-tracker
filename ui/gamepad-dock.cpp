@@ -725,6 +725,14 @@ void GamepadDock::onSceneMappingChanged()
 
 void GamepadDock::onTimerUpdate()
 {
+	// Monitora conexão/desconexão física de controles USB e Bluetooth em tempo real
+	static int s_last_dev_count = -1;
+	int cur_dev_count = GamepadController::get_instance().get_connected_device_count();
+	if (cur_dev_count != s_last_dev_count) {
+		s_last_dev_count = cur_dev_count;
+		populateDevices();
+	}
+
 	GamepadState state;
 	// Chama tick() continuamente para ler o controle e disparar trocas de cenas e presets!
 	bool ok = GamepadController::get_instance().tick(0.033f, state);

@@ -21,25 +21,144 @@ static SDL_GameController *s_current_controller = nullptr;
 static SDL_Joystick *s_current_joystick = nullptr;
 static int s_current_opened_index = -1;
 
-// Base de dados comunitária para controles populares no Windows (Bluetooth / DirectInput)
+// Base de dados comunitária para controles populares no Windows (USB / Bluetooth / DirectInput / XInput)
 static const char *s_builtin_sdl_mappings[] = {
+	// XInput Universal (abrange qualquer controle Xbox 360, One, Series X/S e clones via USB ou adaptador sem fio)
+	"xinput,XInput Controller,a:b0,b:b1,back:b6,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b10,leftshoulder:b4,leftstick:b8,lefttrigger:a2,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b9,righttrigger:a5,rightx:a3,righty:a4,start:b7,x:b2,y:b3,platform:Windows,",
+
+	// Xbox 360 Controller USB com fio
+	"030000005e0400008e02000000007801,Xbox 360 Controller,a:b0,b:b1,back:b6,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b10,leftshoulder:b4,leftstick:b8,lefttrigger:a2,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b9,righttrigger:a5,rightx:a3,righty:a4,start:b7,x:b2,y:b3,platform:Windows,",
+
+	// Xbox One Controller USB com fio
+	"030000005e040000d102000000007801,Xbox One Controller,a:b0,b:b1,back:b6,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b10,leftshoulder:b4,leftstick:b8,lefttrigger:a2,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b9,righttrigger:a5,rightx:a3,righty:a4,start:b7,x:b2,y:b3,platform:Windows,",
+
 	// Xbox Wireless Controller Bluetooth (Windows)
 	"030000005e040000120b000000007801,Xbox Wireless Controller,a:b0,b:b1,back:b10,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b6,leftstick:b13,lefttrigger:a5,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b14,righttrigger:a4,rightx:a2,righty:a3,start:b11,x:b2,y:b3,platform:Windows,",
 	"030000005e040000130b000000007801,Xbox Series X Controller,a:b0,b:b1,back:b10,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b6,leftstick:b13,lefttrigger:a5,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b14,righttrigger:a4,rightx:a2,righty:a3,start:b11,x:b2,y:b3,platform:Windows,",
 	"030000005e040000200b000000007801,Xbox Wireless Controller,a:b0,b:b1,back:b10,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b6,leftstick:b13,lefttrigger:a5,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b14,righttrigger:a4,rightx:a2,righty:a3,start:b11,x:b2,y:b3,platform:Windows,",
 	"030000005e040000e002000000007801,Xbox Wireless Controller,a:b0,b:b1,back:b6,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b10,leftshoulder:b4,leftstick:b8,lefttrigger:a2,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b9,righttrigger:a5,rightx:a3,righty:a4,start:b7,x:b2,y:b3,platform:Windows,",
 	"030000005e040000fd02000000007801,Xbox One Controller,a:b0,b:b1,back:b6,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b10,leftshoulder:b4,leftstick:b8,lefttrigger:a2,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b9,righttrigger:a5,rightx:a3,righty:a4,start:b7,x:b2,y:b3,platform:Windows,",
-	// PS4 / PS5 DualShock / DualSense
+
+	// PS4 DualShock 4 (USB com fio e Bluetooth)
 	"030000004c050000c405000000007801,PS4 Controller,a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b4,leftstick:b10,lefttrigger:a3,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b11,righttrigger:a4,rightx:a2,righty:a5,start:b9,x:b0,y:b3,platform:Windows,",
+	"030000004c050000c405000011017801,PS4 Controller (USB),a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b4,leftstick:b10,lefttrigger:a3,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b11,righttrigger:a4,rightx:a2,righty:a5,start:b9,x:b0,y:b3,platform:Windows,",
+	"030000004c050000cc09000011017801,PS4 Controller (USB v2),a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b4,leftstick:b10,lefttrigger:a3,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b11,righttrigger:a4,rightx:a2,righty:a5,start:b9,x:b0,y:b3,platform:Windows,",
+
+	// PS5 DualSense (USB com fio e Bluetooth)
 	"030000004c050000e60c000000007801,PS5 Controller,a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b4,leftstick:b10,lefttrigger:a3,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b11,righttrigger:a4,rightx:a2,righty:a5,start:b9,x:b0,y:b3,platform:Windows,",
+	"030000004c050000e60c000011017801,PS5 Controller (USB),a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b4,leftstick:b10,lefttrigger:a3,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b11,righttrigger:a4,rightx:a2,righty:a5,start:b9,x:b0,y:b3,platform:Windows,",
+
+	// Nintendo Switch Pro Controller (USB e Bluetooth)
+	"030000007e0500000920000000007801,Nintendo Switch Pro Controller,a:b1,b:b0,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b4,leftstick:b10,lefttrigger:b6,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b11,righttrigger:b7,rightx:a2,righty:a3,start:b9,x:b3,y:b2,platform:Windows,",
+
+	// Logitech USB (DirectInput)
+	"030000006d04000016c2000000007801,Logitech Dual Action,a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,leftshoulder:b4,leftstick:b10,lefttrigger:b6,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b11,righttrigger:b7,rightx:a2,righty:a3,start:b9,x:b0,y:b3,platform:Windows,",
+	"030000006d04000018c2000000007801,Logitech F310 Gamepad (DInput),a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,leftshoulder:b4,leftstick:b10,lefttrigger:b6,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b11,righttrigger:b7,rightx:a2,righty:a3,start:b9,x:b0,y:b3,platform:Windows,",
+	"030000006d04000019c2000000007801,Logitech F710 Gamepad (DInput),a:b1,b:b2,back:b10,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,leftshoulder:b4,leftstick:b8,lefttrigger:b6,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b9,righttrigger:b7,rightx:a2,righty:a3,start:b11,x:b0,y:b3,platform:Windows,",
+
+	// Controles Genéricos USB populares (DragonRise / Twin USB / Retro USB)
+	"03000000790000000600000000007801,DragonRise USB Gamepad,a:b2,b:b1,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,leftshoulder:b6,leftstick:b10,lefttrigger:b4,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b11,righttrigger:b5,rightx:a2,righty:a3,start:b9,x:b3,y:b0,platform:Windows,",
+	"03000000790000001100000000007801,Retro USB Gamepad,a:b2,b:b1,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,leftshoulder:b6,leftstick:b10,lefttrigger:b4,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b11,righttrigger:b5,rightx:a2,righty:a3,start:b9,x:b3,y:b0,platform:Windows,",
+	"030000001008000001e5000000007801,Twin USB Gamepad,a:b2,b:b1,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,leftshoulder:b6,leftstick:b10,lefttrigger:b4,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b11,righttrigger:b5,rightx:a2,righty:a3,start:b9,x:b3,y:b0,platform:Windows,",
 	nullptr
 };
+
+static void ensure_auto_mapping_for_device(int device_index)
+{
+	if (SDL_IsGameController(device_index))
+		return;
+
+	SDL_JoystickGUID guid = SDL_JoystickGetDeviceGUID(device_index);
+	char guidStr[64] = {0};
+	SDL_JoystickGetGUIDString(guid, guidStr, sizeof(guidStr));
+
+	char *existing = SDL_GameControllerMappingForGUID(guid);
+	if (existing) {
+		SDL_free(existing);
+		return;
+	}
+
+	SDL_Joystick *temp_joy = SDL_JoystickOpen(device_index);
+	if (!temp_joy)
+		return;
+
+	int nAxes = SDL_JoystickNumAxes(temp_joy);
+	int nBtns = SDL_JoystickNumButtons(temp_joy);
+	int nHats = SDL_JoystickNumHats(temp_joy);
+	const char *joyName = SDL_JoystickName(temp_joy);
+	std::string nameStr = (joyName && *joyName) ? joyName : "Generic USB Gamepad";
+	SDL_JoystickClose(temp_joy);
+
+	if (nBtns < 4 && nAxes < 2)
+		return;
+
+	// Constrói mapeamento padrão SDL para tornar qualquer controle USB um SDL_GameController completo
+	std::string map = std::string(guidStr) + "," + nameStr + ",";
+	if (nAxes >= 1) map += "leftx:a0,";
+	if (nAxes >= 2) map += "lefty:a1,";
+	if (nAxes >= 4) {
+		map += "rightx:a2,righty:a3,";
+	} else if (nAxes == 3) {
+		map += "righty:a2,";
+	}
+	if (nBtns > 0) map += "a:b0,";
+	if (nBtns > 1) map += "b:b1,";
+	if (nBtns > 2) map += "x:b2,";
+	if (nBtns > 3) map += "y:b3,";
+	if (nBtns > 4) map += "leftshoulder:b4,";
+	if (nBtns > 5) map += "rightshoulder:b5,";
+	if (nAxes >= 6) {
+		map += "lefttrigger:a4,righttrigger:a5,";
+	} else {
+		if (nBtns > 6) map += "lefttrigger:b6,";
+		if (nBtns > 7) map += "righttrigger:b7,";
+	}
+	if (nBtns > 8) map += "back:b8,";
+	if (nBtns > 9) map += "start:b9,";
+	if (nBtns > 10) map += "leftstick:b10,";
+	if (nBtns > 11) map += "rightstick:b11,";
+	if (nHats > 0) {
+		map += "dpup:h0.1,dpright:h0.2,dpdown:h0.4,dpleft:h0.8,";
+	} else if (nBtns >= 16) {
+		map += "dpup:b12,dpdown:b13,dpleft:b14,dpright:b15,";
+	}
+	map += "platform:Windows,";
+
+	int res = SDL_GameControllerAddMapping(map.c_str());
+	if (res >= 0) {
+		blog(LOG_INFO, "[Gamepad SDL2] Auto-mapeamento dinâmico registrado para %s (%s)",
+		     nameStr.c_str(), guidStr);
+	}
+}
 
 static void ensure_sdl_init()
 {
 	if (!s_sdl_initialized) {
+		// 1. Configurações fundamentais para reconhecimento nativo e hotplug no Windows
 		SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
 		SDL_SetHint(SDL_HINT_AUTO_UPDATE_JOYSTICKS, "1");
+
+		// Thread dedicada do SDL para escutar chegada e saída de dispositivos USB em tempo real (Hotplug)
+		SDL_SetHint(SDL_HINT_JOYSTICK_THREAD, "1");
+
+		// No Windows, RAWINPUT conflita com XInput nativo e DirectInput USB.
+		// Desabilitar RAWINPUT força o SDL a usar os drivers nativos XInput e DirectInput,
+		// que reconhecem imediatamente controles Xbox USB/BT e genéricos USB sem perda de botões.
+		SDL_SetHint(SDL_HINT_JOYSTICK_RAWINPUT, "0");
+		SDL_SetHint(SDL_HINT_XINPUT_ENABLED, "1");
+		SDL_SetHint(SDL_HINT_DIRECTINPUT_ENABLED, "1");
+
+		// Habilita drivers HIDAPI nativos para PS4, PS5 e Nintendo Switch (USB e Bluetooth)
+		SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI, "1");
+		// Mantém HIDAPI_XBOX em 0 para que controles Xbox USB usem o driver xusb nativo do Windows
+		SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_XBOX, "0");
+		SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4, "1");
+		SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS5, "1");
+		SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_SWITCH, "1");
+		SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_JOY_CONS, "1");
+		SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STADIA, "1");
+		SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_LUNA, "1");
+
 		if (SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK) == 0) {
 			s_sdl_initialized = true;
 
@@ -60,6 +179,7 @@ static void ensure_sdl_init()
 					"data/obs-plugins/obs-face-tracker/gamecontrollerdb.txt",
 					"obs-plugins/obs-face-tracker/gamecontrollerdb.txt",
 					"data/gamecontrollerdb.txt",
+					"../data/gamecontrollerdb.txt",
 					nullptr
 				};
 				for (int f = 0; fallbacks[f] != nullptr && loaded <= 0; f++) {
@@ -349,9 +469,12 @@ std::vector<ControllerDeviceInfo> GamepadController::get_available_devices()
 	if (!s_sdl_initialized)
 		return list;
 
+	SDL_PumpEvents();
 	SDL_JoystickUpdate();
 	int numJoysticks = SDL_NumJoysticks();
 	for (int i = 0; i < numJoysticks; i++) {
+		ensure_auto_mapping_for_device(i);
+
 		ControllerDeviceInfo dev;
 		dev.id = "sdl_" + std::to_string(i);
 		dev.index = i;
@@ -380,6 +503,15 @@ std::vector<ControllerDeviceInfo> GamepadController::get_available_devices()
 	return list;
 }
 
+int GamepadController::get_connected_device_count()
+{
+	ensure_sdl_init();
+	if (!s_sdl_initialized)
+		return 0;
+	SDL_PumpEvents();
+	return SDL_NumJoysticks();
+}
+
 bool GamepadController::poll_state(GamepadState &state)
 {
 	memset(&state, 0, sizeof(GamepadState));
@@ -391,6 +523,8 @@ bool GamepadController::poll_state(GamepadState &state)
 	if (!s_sdl_initialized)
 		return false;
 
+	// Bombeia eventos do Windows e atualiza subsistemas do SDL para detectar USB/BT em tempo real
+	SDL_PumpEvents();
 	SDL_JoystickUpdate();
 	SDL_GameControllerUpdate();
 
@@ -404,13 +538,44 @@ bool GamepadController::poll_state(GamepadState &state)
 		return false;
 	}
 
+	// Garante que qualquer controle USB conectado tenha um mapeamento registrado
+	for (int i = 0; i < numJoysticks; i++) {
+		ensure_auto_mapping_for_device(i);
+	}
+
 	int target_index = -1;
 	if (selected_device_id.empty() || selected_device_id == "auto") {
-		target_index = 0;
+		// Modo automático: seleciona o primeiro controle ativo e funcional
+		// Dá prioridade aos identificados como GameController
+		for (int i = 0; i < numJoysticks; i++) {
+			if (SDL_IsGameController(i)) {
+				target_index = i;
+				break;
+			}
+		}
+		if (target_index < 0 && numJoysticks > 0) {
+			target_index = 0;
+		}
 	} else if (selected_device_id.rfind("sdl_", 0) == 0) {
 		target_index = std::atoi(selected_device_id.substr(4).c_str());
+		// Se o índice mudou ou está fora do range (ex: após reconectar cabo USB), tenta casar pelo GUID salvo
 		if (target_index < 0 || target_index >= numJoysticks) {
-			target_index = 0;
+			bool found_guid = false;
+			if (!active_device_guid.empty()) {
+				for (int i = 0; i < numJoysticks; i++) {
+					char gstr[64] = {0};
+					SDL_JoystickGUID g = SDL_JoystickGetDeviceGUID(i);
+					SDL_JoystickGetGUIDString(g, gstr, sizeof(gstr));
+					if (active_device_guid == gstr) {
+						target_index = i;
+						found_guid = true;
+						break;
+					}
+				}
+			}
+			if (!found_guid) {
+				target_index = 0;
+			}
 		}
 	}
 
@@ -423,7 +588,17 @@ bool GamepadController::poll_state(GamepadState &state)
 		return false;
 	}
 
-	if (s_current_opened_index != target_index || (!s_current_controller && !s_current_joystick)) {
+	// Verifica se o controle aberto atualmente ainda está ativo e conectado fisicamente
+	bool is_attached = false;
+	if (s_current_controller && SDL_GameControllerGetAttached(s_current_controller)) {
+		is_attached = true;
+	}
+	if (s_current_joystick && SDL_JoystickGetAttached(s_current_joystick)) {
+		is_attached = true;
+	}
+
+	// Se o dispositivo mudou de índice ou o handle anterior ficou desconectado (hotplug USB), reabre
+	if (s_current_opened_index != target_index || !is_attached) {
 		close_current_device();
 		if (SDL_IsGameController(target_index)) {
 			s_current_controller = SDL_GameControllerOpen(target_index);
@@ -702,7 +877,7 @@ bool GamepadController::poll_state(GamepadState &state)
 	if (s_current_joystick && SDL_JoystickGetAttached(s_current_joystick)) {
 		state.connected = true;
 		const char *jname = SDL_JoystickName(s_current_joystick);
-		active_device_name = (jname && *jname) ? jname : "Joystick";
+		active_device_name = (jname && *jname) ? jname : "Joystick USB";
 
 		int numAxes = SDL_JoystickNumAxes(s_current_joystick);
 		if (numAxes >= 2) {
@@ -719,6 +894,11 @@ bool GamepadController::poll_state(GamepadState &state)
 			float raw_ry = -(float)axis_ry / 32767.0f;
 			raw_ry = std::clamp(raw_ry, -1.0f, 1.0f);
 			state.zoom_axis = apply_progressive_curve(raw_ry, deadzone, curve_gamma, min_speed, max_speed * zoom_speed_mult * sensitivity);
+		} else if (numAxes == 3) {
+			int16_t axis_rz = SDL_JoystickGetAxis(s_current_joystick, 2);
+			float raw_rz = -(float)axis_rz / 32767.0f;
+			raw_rz = std::clamp(raw_rz, -1.0f, 1.0f);
+			state.zoom_axis = apply_progressive_curve(raw_rz, deadzone, curve_gamma, min_speed, max_speed * zoom_speed_mult * sensitivity);
 		}
 
 		int numButtons = SDL_JoystickNumButtons(s_current_joystick);
@@ -732,6 +912,8 @@ bool GamepadController::poll_state(GamepadState &state)
 		if (numButtons > 7) state.btn_rt = SDL_JoystickGetButton(s_current_joystick, 7) != 0;
 		if (numButtons > 8) state.btn_back = SDL_JoystickGetButton(s_current_joystick, 8) != 0;
 		if (numButtons > 9) state.btn_start = SDL_JoystickGetButton(s_current_joystick, 9) != 0;
+		if (numButtons > 10) state.btn_thumb_l = SDL_JoystickGetButton(s_current_joystick, 10) != 0;
+		if (numButtons > 11) state.btn_thumb_r = SDL_JoystickGetButton(s_current_joystick, 11) != 0;
 
 		state.trigger_left = state.btn_lt ? 1.0f : 0.0f;
 		state.trigger_right = state.btn_rt ? 1.0f : 0.0f;
@@ -743,6 +925,14 @@ bool GamepadController::poll_state(GamepadState &state)
 			state.dpad_down = (hat & SDL_HAT_DOWN) != 0;
 			state.dpad_left = (hat & SDL_HAT_LEFT) != 0;
 			state.dpad_right = (hat & SDL_HAT_RIGHT) != 0;
+		}
+
+		// Fallback para controles genéricos com D-Pad nos botões 12 a 15 se o Hat não estiver ativo
+		if (!state.dpad_up && !state.dpad_down && !state.dpad_left && !state.dpad_right) {
+			if (numButtons > 12) state.dpad_up = SDL_JoystickGetButton(s_current_joystick, 12) != 0;
+			if (numButtons > 13) state.dpad_down = SDL_JoystickGetButton(s_current_joystick, 13) != 0;
+			if (numButtons > 14) state.dpad_left = SDL_JoystickGetButton(s_current_joystick, 14) != 0;
+			if (numButtons > 15) state.dpad_right = SDL_JoystickGetButton(s_current_joystick, 15) != 0;
 		}
 
 		last_state = state;

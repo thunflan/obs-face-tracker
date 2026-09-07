@@ -244,6 +244,7 @@ public:
 
 	// Dispositivos e Dropdown de seleção
 	std::vector<ControllerDeviceInfo> get_available_devices();
+	int get_connected_device_count();
 	void set_selected_device(const std::string &id) { selected_device_id = id; }
 	std::string get_selected_device() const { return selected_device_id; }
 	std::string get_active_device_name() const { return active_device_name; }
